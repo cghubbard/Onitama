@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onitama</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <h1>Onitama</h1>
+
+    <div id="app">
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab active" data-target="play">Play</button>
+            <button class="tab" data-target="replays">Replays</button>
+        </div>
+
+        <!-- Setup Panel -->
+        <div id="setup-panel">
+            <h2>New Game</h2>
+            <div class="setup-row">
+                <div class="setup-group">
+                    <label for="blue-agent">Blue Player</label>
+                    <select id="blue-agent">
+                        <option value="human">Human</option>
+                        <option value="random">Random AI</option>
+                        <option value="heuristic">Heuristic AI</option>
+                    </select>
+                </div>
+                <div class="setup-group">
+                    <label for="red-agent">Red Player</label>
+                    <select id="red-agent">
+                        <option value="human">Human</option>
+                        <option value="random">Random AI</option>
+                        <option value="heuristic" selected>Heuristic AI</option>
+                    </select>
+                </div>
+            </div>
+            <button id="start-game">Start Game</button>
+        </div>
+
+        <!-- Game Area -->
+        <div id="game-area" class="hidden">
+            <!-- Game Info Bar -->
+            <div id="game-info">
+                <span id="current-player" class="blue">BLUE</span>
+                <span id="move-count">Move: 0</span>
+            </div>
+
+            <!-- Status Message -->
+            <div id="status-message" class="hidden"></div>
+
+            <!-- Main Game Board -->
+            <div id="board-container">
+                <!-- Blue Cards (Left) -->
+                <div id="blue-cards" class="card-area"></div>
+
+                <!-- Board -->
+                <div id="board"></div>
+
+                <!-- Red Cards (Right) -->
+                <div id="red-cards" class="card-area"></div>
+            </div>
+
+            <!-- Neutral Card -->
+            <div style="text-align: center; margin-top: 10px;">
+                <span style="color: #888; font-size: 12px;">Neutral Card</span>
+                <div id="neutral-card" class="card-area horizontal" style="justify-content: center;"></div>
+            </div>
+
+            <!-- AI Controls (hidden by default) -->
+            <div id="ai-controls" class="hidden">
+                <button id="start-ai-btn">Start AI Game</button>
+                <button id="pause-btn">Pause</button>
+                <button id="resume-btn" disabled>Resume</button>
+                <button id="step-btn">Step</button>
+                <div id="speed-control">
+                    <label>Speed:</label>
+                    <input type="range" id="speed-slider" min="0.1" max="3" step="0.1" value="1">
+                    <span id="speed-label">1.0s</span>
+                </div>
+            </div>
+
+            <!-- Replay Controls (hidden by default) -->
+            <div id="replay-controls" class="hidden">
+                <button id="replay-start">|&lt;</button>
+                <button id="replay-prev">&lt;</button>
+                <button id="replay-next">&gt;</button>
+                <button id="replay-end">&gt;|</button>
+            </div>
+            <div id="replay-info"></div>
+
+            <!-- New Game Button -->
+            <div style="margin-top: 20px; text-align: center;">
+                <button id="new-game-btn">New Game</button>
+            </div>
+        </div>
+
+        <!-- Replay Panel -->
+        <div id="replay-panel" class="hidden">
+            <h2>Game Replays</h2>
+            <div id="replay-list"></div>
+            <input type="range" id="replay-slider" min="0" max="0" value="0" style="width: 100%; margin-top: 20px;">
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="game-over-overlay" class="hidden">
+            <div id="game-over-panel">
+                <h2>Game Over</h2>
+                <p class="reason"></p>
+                <button id="new-game-btn-overlay" onclick="document.getElementById('new-game-btn').click()">New Game</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/board.js"></script>
+    <script src="/static/js/game.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

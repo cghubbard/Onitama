@@ -1,0 +1,3 @@
+"""
+Onitama implementation package.
+"""
