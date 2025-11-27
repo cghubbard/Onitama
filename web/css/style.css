@@ -529,3 +529,14 @@ button:disabled {
 #status-message.info {
     background: var(--blue-dark);
 }
+
+/* Replay move highlighting */
+.cell.replay-from {
+    background: rgba(52, 152, 219, 0.4) !important;
+    box-shadow: inset 0 0 0 3px #3498db;
+}
+
+.cell.replay-to {
+    background: rgba(46, 204, 113, 0.4) !important;
+    box-shadow: inset 0 0 0 3px #2ecc71;
+}

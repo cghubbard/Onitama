@@ -309,11 +309,30 @@ class Game:
     def get_outcome(self) -> int:
         """
         Get the game outcome.
-        
+
         Returns:
             Game outcome (ONGOING, BLUE_WINS, RED_WINS, or DRAW)
         """
         return self.outcome
+
+    def copy(self) -> 'Game':
+        """
+        Create a deep copy of the game state for simulation.
+
+        Returns:
+            A new Game instance with the same state
+        """
+        new_game = Game.__new__(Game)
+        new_game.board = self.board.copy()
+        new_game.player_cards = {
+            BLUE: [Card(c.name, c.movements) for c in self.player_cards[BLUE]],
+            RED: [Card(c.name, c.movements) for c in self.player_cards[RED]]
+        }
+        new_game.neutral_card = Card(self.neutral_card.name, self.neutral_card.movements)
+        new_game.current_player = self.current_player
+        new_game.outcome = self.outcome
+        new_game.move_history = self.move_history.copy()
+        return new_game
     
     def __str__(self) -> str:
         """Return string representation of the game state."""

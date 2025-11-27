@@ -11,9 +11,17 @@ from src.utils.constants import BLUE, RED, PLAYER_NAMES, ONGOING, OUTCOME_NAMES,
 from src.game.game import Game
 from src.agents.random_agent import RandomAgent
 from src.agents.heuristic_agent import HeuristicAgent
+from src.agents.linear_heuristic_agent import LinearHeuristicAgent
 from src.utils.renderer import ConsoleRenderer, ASCIIRenderer
 from src.logging.game_logger import GameLogger, GameLogSession, create_logger_from_args
 from src.game.serialization import determine_win_reason
+
+# Agent type mapping
+AGENT_TYPES = {
+    'random': RandomAgent,
+    'heuristic': HeuristicAgent,
+    'linear': LinearHeuristicAgent,
+}
 
 
 def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, verbose=True, cards=None, max_moves=200, log_session=None, game=None):
@@ -40,15 +48,10 @@ def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, 
     
     # Create the agents
     agents = {}
-    if blue_agent_type.lower() == 'random':
-        agents[BLUE] = RandomAgent(BLUE)
-    else:  # heuristic
-        agents[BLUE] = HeuristicAgent(BLUE)
-    
-    if red_agent_type.lower() == 'random':
-        agents[RED] = RandomAgent(RED)
-    else:  # heuristic
-        agents[RED] = HeuristicAgent(RED)
+    blue_agent_class = AGENT_TYPES.get(blue_agent_type.lower(), HeuristicAgent)
+    red_agent_class = AGENT_TYPES.get(red_agent_type.lower(), HeuristicAgent)
+    agents[BLUE] = blue_agent_class(BLUE)
+    agents[RED] = red_agent_class(RED)
     
     # Create the renderer
     if renderer_type.lower() == 'console':
@@ -157,10 +160,10 @@ def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, 
 def main():
     """Main function to parse arguments and run the game."""
     parser = argparse.ArgumentParser(description='Run an Onitama game between two agents.')
-    parser.add_argument('--blue', type=str, choices=['random', 'heuristic'], default='random',
-                        help='Type of agent for BLUE player')
-    parser.add_argument('--red', type=str, choices=['random', 'heuristic'], default='heuristic',
-                        help='Type of agent for RED player')
+    parser.add_argument('--blue', type=str, choices=['random', 'heuristic', 'linear'], default='random',
+                        help='Type of agent for BLUE player (random, heuristic, or linear)')
+    parser.add_argument('--red', type=str, choices=['random', 'heuristic', 'linear'], default='heuristic',
+                        help='Type of agent for RED player (random, heuristic, or linear)')
     parser.add_argument('--renderer', type=str, choices=['console', 'ascii'], default='ascii',
                         help='Type of renderer to use')
     parser.add_argument('--delay', type=float, default=0.0,
@@ -168,7 +171,7 @@ def main():
     parser.add_argument('--quiet', action='store_true',
                         help='Run in quiet mode (no output)')
     parser.add_argument('--games', type=int, default=1,
-                        help='Number of games to run')
+                        help='Number of games to run (agents alternate colors for balanced evaluation)')
     parser.add_argument('--cards', type=str, nargs=5,
                         help='Five specific cards to use (e.g., Tiger Dragon Frog Rabbit Crab)')
     parser.add_argument('--max-moves', type=int, default=200,
@@ -190,9 +193,24 @@ def main():
     # Convert card names to proper format if provided
     cards = args.cards if args.cards is None else list(args.cards)
 
-    # Run the specified number of games
-    blue_wins = 0
-    red_wins = 0
+    # Create balanced matchup schedule
+    # First half: agent1 as BLUE, agent2 as RED
+    # Second half: agent2 as BLUE, agent1 as RED
+    matchup_schedule = []
+    games_per_side = args.games // 2
+
+    for i in range(games_per_side):
+        matchup_schedule.append({'blue': args.blue, 'red': args.red})
+    for i in range(games_per_side):
+        matchup_schedule.append({'blue': args.red, 'red': args.blue})
+
+    # If odd number of games, give extra game to original color assignment
+    if args.games % 2 == 1:
+        matchup_schedule.append({'blue': args.blue, 'red': args.red})
+
+    # Track by agent, not by color
+    agent1_wins = 0  # args.blue
+    agent2_wins = 0  # args.red
     draws = 0
     games_logged = 0
 
@@ -206,18 +224,21 @@ def main():
             print(f"Progress: {i}/{args.games} games ({i/args.games:.1%}), "
                   f"Rate: {games_per_second:.2f} games/s, ETA: {eta:.1f}s")
 
+        # Get matchup for this game
+        matchup = matchup_schedule[i]
+
         if args.games > 1 and not args.quiet and not args.progress:
-            print(f"\n===== Game {i+1} =====\n")
+            print(f"\n===== Game {i+1} (BLUE: {matchup['blue']}, RED: {matchup['red']}) =====\n")
 
         # Create a game to get the log session started
         game = Game(cards=cards)
-        log_session = logger.start_game(game, args.blue, args.red)
+        log_session = logger.start_game(game, matchup['blue'], matchup['red'])
         if log_session.active:
             games_logged += 1
 
         outcome = run_game(
-            blue_agent_type=args.blue,
-            red_agent_type=args.red,
+            blue_agent_type=matchup['blue'],
+            red_agent_type=matchup['red'],
             renderer_type=args.renderer,
             delay=args.delay,
             verbose=not args.quiet,
@@ -226,11 +247,18 @@ def main():
             log_session=log_session,
             game=game
         )
-        
+
+        # Map outcome to agents (not colors)
         if outcome == 1:  # BLUE_WINS
-            blue_wins += 1
+            if matchup['blue'] == args.blue:
+                agent1_wins += 1
+            else:
+                agent2_wins += 1
         elif outcome == 2:  # RED_WINS
-            red_wins += 1
+            if matchup['red'] == args.blue:
+                agent1_wins += 1
+            else:
+                agent2_wins += 1
         else:  # DRAW
             draws += 1
     
@@ -240,10 +268,17 @@ def main():
     if args.games > 1:
         print("\n===== Results =====")
         print(f"Games played: {args.games}")
-        print(f"BLUE ({args.blue}) wins: {blue_wins} ({blue_wins/args.games:.1%})")
-        print(f"RED ({args.red}) wins: {red_wins} ({red_wins/args.games:.1%})")
+        print(f"{args.blue} wins: {agent1_wins} ({agent1_wins/args.games:.1%})")
+        print(f"{args.red} wins: {agent2_wins} ({agent2_wins/args.games:.1%})")
         print(f"Draws: {draws} ({draws/args.games:.1%})")
-        print(f"Total time: {total_time:.2f}s, Average: {total_time/args.games:.4f}s per game")
+
+        # Show matchup distribution for verification
+        blue_as_agent1 = sum(1 for m in matchup_schedule if m['blue'] == args.blue)
+        print(f"\nMatchup distribution:")
+        print(f"  {args.blue} as BLUE: {blue_as_agent1}/{args.games}")
+        print(f"  {args.red} as BLUE: {args.games - blue_as_agent1}/{args.games}")
+
+        print(f"\nTotal time: {total_time:.2f}s, Average: {total_time/args.games:.4f}s per game")
         if args.log != 'none':
             print(f"Games logged: {games_logged}")
 

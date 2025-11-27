@@ -159,6 +159,29 @@ class BoardRenderer {
         this.isPlayerTurn = isPlayerTurn;
         this.playerColor = playerColor;
     }
+
+    highlightReplayMove(fromPos, toPos) {
+        // Clear existing replay highlights
+        this.container.querySelectorAll('.cell').forEach(cell => {
+            cell.classList.remove('replay-from', 'replay-to');
+        });
+
+        // Highlight source square
+        if (fromPos) {
+            const fromCell = this.container.querySelector(
+                `[data-x="${fromPos[0]}"][data-y="${fromPos[1]}"]`
+            );
+            if (fromCell) fromCell.classList.add('replay-from');
+        }
+
+        // Highlight destination square
+        if (toPos) {
+            const toCell = this.container.querySelector(
+                `[data-x="${toPos[0]}"][data-y="${toPos[1]}"]`
+            );
+            if (toCell) toCell.classList.add('replay-to');
+        }
+    }
 }
 
 // Card renderer

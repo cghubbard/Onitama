@@ -262,6 +262,7 @@ async function loadReplay(gameId) {
 
 let replayData = null;
 let replayIndex = 0;
+let replayListenersInitialized = false;
 
 function initReplayViewer(trajectory) {
     replayData = trajectory;
@@ -281,36 +282,46 @@ function initReplayViewer(trajectory) {
     if (slider) {
         slider.max = trajectory.transitions.length - 1;
         slider.value = 0;
-        slider.addEventListener('input', (e) => {
-            replayIndex = parseInt(e.target.value);
-            renderReplayState();
-        });
     }
 
-    // Set up replay buttons
-    document.getElementById('replay-start')?.addEventListener('click', () => {
-        replayIndex = 0;
-        renderReplayState();
-    });
+    // Only set up event listeners once to prevent duplicate handlers
+    if (!replayListenersInitialized) {
+        replayListenersInitialized = true;
 
-    document.getElementById('replay-prev')?.addEventListener('click', () => {
-        if (replayIndex > 0) {
-            replayIndex--;
-            renderReplayState();
+        if (slider) {
+            slider.addEventListener('input', (e) => {
+                replayIndex = parseInt(e.target.value);
+                renderReplayState();
+            });
         }
-    });
 
-    document.getElementById('replay-next')?.addEventListener('click', () => {
-        if (replayIndex < trajectory.transitions.length - 1) {
-            replayIndex++;
+        // Set up replay buttons
+        document.getElementById('replay-start')?.addEventListener('click', () => {
+            replayIndex = 0;
             renderReplayState();
-        }
-    });
+        });
 
-    document.getElementById('replay-end')?.addEventListener('click', () => {
-        replayIndex = trajectory.transitions.length - 1;
-        renderReplayState();
-    });
+        document.getElementById('replay-prev')?.addEventListener('click', () => {
+            if (replayIndex > 0) {
+                replayIndex--;
+                renderReplayState();
+            }
+        });
+
+        document.getElementById('replay-next')?.addEventListener('click', () => {
+            if (replayData && replayIndex < replayData.transitions.length - 1) {
+                replayIndex++;
+                renderReplayState();
+            }
+        });
+
+        document.getElementById('replay-end')?.addEventListener('click', () => {
+            if (replayData) {
+                replayIndex = replayData.transitions.length - 1;
+                renderReplayState();
+            }
+        });
+    }
 
     renderReplayState();
 }
@@ -337,8 +348,16 @@ function renderReplayState() {
     // Disable player interaction for replay
     gameController.boardRenderer.setPlayerTurn(false, null);
 
-    // Render
+    // Render the board
     gameController.render();
+
+    // Highlight the move that was made
+    if (transition.action) {
+        gameController.boardRenderer.highlightReplayMove(
+            transition.action.from,
+            transition.action.to
+        );
+    }
 
     // Update slider
     const slider = document.getElementById('replay-slider');

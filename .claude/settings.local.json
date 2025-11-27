@@ -5,7 +5,8 @@
       "Bash(pip install fastapi uvicorn websockets pydantic)",
       "Bash(timeout 5 python:*)",
       "Bash(python:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

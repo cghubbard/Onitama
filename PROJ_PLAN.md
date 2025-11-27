@@ -329,18 +329,398 @@ At this point, you have a whole zoo of agents. Now use them to explore higher-le
 
 ---
 
-## How I’d actually do this, in order
-
-If you want a concrete implementation order:
-
-1. **Improve heuristic + build tournament + logging** (project 1–2 evenings).
-2. **Tabular Q-learning on a tiny Onitama variant** to get the Bellman stuff into your fingers.
-3. **Linear SARSA/Q with hand-crafted features** on the real game.
-4. **REINFORCE + baseline** with a simple CNN policy.
-5. **Actor-critic + PPO**, filling in `PPOAgent` and `train_ppo.py`.
-6. **MCTS agent** for comparison and as a possible “teacher”.
-7. **Imitation + curriculum + self-play league** once PPO is stable.
-
-If you’d like, next step we can pick **one** of these (e.g., tabular Q on a simplified environment) and sketch out the exact state encoding, data structures, and training loop in your current repo layout.
-
 [1]: https://github.com/cghubbard/Onitama "GitHub - cghubbard/Onitama: RL Understand Work"
+
+
+Nice, this is a great place to slow down and be intentional before coding.
+
+You already have:
+
+* **Random agent** ✅
+* **Simple heuristic agent** ✅
+
+Let’s dig into plans for:
+
+* **B. “Real” heuristic agent** (refine + parameterize what you have)
+* **C. 1-ply lookahead agent** (search on top of that heuristic)
+* **D. Shallow minimax agent** (adversarial search with that heuristic)
+
+I’ll keep it intuitive first, then sprinkle in some math.
+
+---
+
+## B. Heuristic Agent – what to design / experiment with
+
+### 1. Intuition: what’s the job of this agent?
+
+This agent is your **hand-crafted “value function”**: given a board position (s), it returns a number (V(s)) that means “how good this is for the current player.”
+
+Later you can:
+
+* Use it directly as a baseline agent.
+* Use it as a **feature template** or **initialization** for RL value functions.
+* Use it as a scoring function inside 1-ply and minimax agents.
+
+So Step B is really “design a reasonable evaluation function for Onitama.”
+
+---
+
+### 2. Structure: linear heuristic is enough (and nice for learning later)
+
+A natural structure:
+
+[
+V(s) = \sum_{k} w_k , \phi_k(s)
+]
+
+* (\phi_k(s)): hand-crafted features of state (s).
+* (w_k): weights you choose (or later learn).
+
+You can start with **manually chosen** (w_k), then later:
+
+* Fit them with least squares or logistic regression using self-play data.
+* Or learn them via RL.
+
+---
+
+### 3. Candidate features (\phi_k(s)) for Onitama
+
+You don’t need all of these, but think in buckets:
+
+**(1) Material & king safety**
+
+* `#my_students - #opp_students`
+* `my_master_alive` / `opp_master_alive`
+* Big constant for “I win / I lose”:
+
+  * `win_flag` (master capture or temple reach)
+  * `lose_flag`
+
+**(2) Mobility & threats**
+
+* `#legal_moves_current_player`
+* `#my_moves_that_capture_any_piece`
+* `#opp_moves_that_capture_my_master` (king-in-check type feature)
+* `#my_moves_that_threaten_master_next_turn` (how many ways I can threaten their master)
+
+**(3) Positional / progress features**
+
+* Average distance of my pieces to opponent temple.
+* Minimum distance of my master to opponent temple.
+* “Centralization”: count of my pieces in central 3×3 vs edge squares.
+* Symmetry features (e.g., reflect board so you always view from current player’s perspective).
+
+**(4) Card-related features**
+This is Onitama-specific and powerful:
+
+* For each card I hold:
+
+  * Number of legal moves given this card.
+  * Whether card has forward/backward movement.
+  * Whether the card can **ever** reach opponent temple if my master walks that pattern repeatedly.
+* For each opponent card (known information):
+
+  * Number of moves they have that could capture my master.
+  * Whether they have a “long” pattern vs only short steps.
+
+These allow your heuristic to “understand” that having certain cards is really valuable.
+
+---
+
+### 4. Design decisions & experiments for B
+
+Things you can explicitly play with:
+
+1. **Feature set ablations**
+
+   * Start minimalist: material + terminal + mobility.
+   * Add card-awareness.
+   * Add king-safety and see how it shifts style (more cautious vs reckless).
+
+2. **Aggressiveness parameter**
+
+   * Have a knob (\alpha) that scales capture-related features:
+     [
+     V_\alpha(s) = w^\top \phi(s) + \alpha \cdot (\text{capture_threat_features})
+     ]
+   * This lets you create “personalities”: more aggressive vs more positional.
+
+3. **Perspective**
+
+   * Decide whether (V(s)) is always from **current player’s viewpoint** or always from some fixed color’s viewpoint.
+   * My suggestion: **always from the current player** for 1-ply and minimax; makes the logic less error-prone.
+
+4. **Smoothing vs sharp thresholds**
+
+   * Rather than “if my master is in danger add -100”, spread danger penalties more smoothly based on number of attacking moves or distance.
+
+5. **Manual vs data-driven weights (w_k)**
+
+   * Start with your best guess.
+   * Later:
+
+     * Log game states and outcomes from self-play.
+     * Fit (w) with simple regression to approximate win probability.
+
+**Outcome of Step B:**
+You have a **clear, parametric heuristic** (V(s; w)) with a list of features and design knobs you can tweak.
+
+---
+
+## C. 1-Ply Lookahead Agent – wrapping search around the heuristic
+
+### 1. Intuition
+
+Your heuristic answers: “How good is this board right now?”
+
+1-ply lookahead does:
+
+> “For each legal move, imagine I play it, score the resulting board with the heuristic, and pick the best.”
+
+So the policy is:
+
+[
+a^* = \arg\max_{a \in \mathcal{A}(s)} V(s_a)
+]
+
+where (s_a) is the state after applying action (a).
+
+This is still **greedy**, but it anticipates immediate tactical gains or blunders that the pure heuristic might miss when only looking at the current board.
+
+---
+
+### 2. Core design decisions
+
+1. **How to handle terminal states**
+
+   * If a move results in immediate win or loss, short-circuit:
+
+     * Assign (+\infty) or a very large constant for wins.
+     * Assign (-\infty) or very negative constant for self-mate.
+
+2. **Whose perspective is V?**
+
+   * If (V) is always from current player’s perspective:
+
+     * Just evaluate (V(s_a)) directly; no sign flipping.
+   * If from a fixed color, you MUST flip signs depending on who’s about to play. I’d avoid this and stick to “current player perspective.”
+
+3. **Tie-breaking**
+   When multiple moves have similar scores, you can:
+
+   * Prefer moves that:
+
+     * Capture something.
+     * Move master to safer squares (king-safety heuristic).
+     * Use “more flexible” cards (leave you more options later).
+   * Or inject a tiny bit of randomness:
+
+     * Avoid a perfectly deterministic agent if you want diversity in self-play.
+
+4. **Move filtering**
+
+   * Optionally ignore “obviously terrible” moves:
+
+     * E.g., moves that expose your master to immediate capture by a simple static check.
+   * This can speed up 1-ply and improve move quality.
+
+---
+
+### 3. Experiments & knobs at the 1-ply level
+
+1. **Greedy vs “softmax” move selection**
+
+   * Greedy: always pick best (V(s_a)).
+   * Softmax:
+     [
+     P(a|s) \propto \exp(\beta V(s_a))
+     ]
+
+     * Temperature (\beta) controls exploration.
+     * This is a nice bridge to RL: same form as a Boltzmann policy on a value estimate.
+
+2. **Heuristic shaping**
+
+   * Compare:
+
+     * 0-ply: just choose move that gives best immediate heuristic change without forward simulation (if you have such variant).
+     * 1-ply lookahead: simulate and measure (V(s_a)).
+   * You’ll see how much “just one lookahead” helps.
+
+3. **Computational budget**
+
+   * Onitama’s branching factor is small (often < 20 moves), so full 1-ply is cheap.
+   * But you can also think about a time control:
+
+     * “Agent must move within X ms; if too many moves, consider pruning.”
+
+4. **Sensitivity to heuristic weights**
+
+   * Use 1-ply agent as your **microscope** for heuristic design:
+
+     * Small changes in weights can change preferred move a lot.
+     * This tells you which features matter in actual decision-making.
+
+**Outcome of Step C:**
+You have a “search-enhanced heuristic player” and a clear view of the value of one-step lookahead.
+
+---
+
+## D. Shallow Minimax / Alpha-Beta – adversarial search
+
+### 1. Intuition
+
+1-ply assumes the opponent doesn’t react. Minimax assumes they **do their best to hurt you**.
+
+At depth-2 (your move, their move) the idea is:
+
+* You choose a move (a).
+* Assume opponent replies with the move that **minimizes** your resulting value.
+* You pick the move whose worst-case outcome is best.
+
+Formally (depth-2):
+
+[
+a^* = \arg\max_{a \in \mathcal{A}(s)} \ \min_{b \in \mathcal{A}(s_a)} V(s_{a,b})
+]
+
+where:
+
+* (s_a): state after your move (a)
+* (s_{a,b}): state after your move (a) and opponent move (b)
+
+You can extend this to deeper depths with alternating max/min and using (V) only at the leaves.
+
+---
+
+### 2. Minimax with depth limit
+
+In general, for depth (d):
+
+* If (d = 0) or terminal state:
+
+  * Return (V(s)).
+* If it’s your turn (maximizing):
+  [
+  \text{value}(s, d) = \max_{a \in \mathcal{A}(s)} \text{value}(s_a, d-1)
+  ]
+* If it’s opponent’s turn (minimizing):
+  [
+  \text{value}(s, d) = \min_{a \in \mathcal{A}(s)} \text{value}(s_a, d-1)
+  ]
+
+The agent plays:
+
+[
+a^* = \arg\max_{a \in \mathcal{A}(s)} \text{value}(s_a, d-1)
+]
+
+This is where your heuristic becomes a **leaf evaluator**.
+
+---
+
+### 3. Design decisions for minimax
+
+1. **Depth**
+
+   * Depth=1 → just 1-ply (max).
+   * Depth=2 → you move, opponent replies.
+   * Depth=3–4 → starts to feel more “chessy,” but compute grows as ~(b^d).
+   * Onitama’s small branching factor makes depth 3–4 plausible for offline analysis, maybe not for tight real-time constraints.
+
+2. **Alpha-beta pruning**
+
+   * Classic optimization that doesn’t change the result, just prunes branches that can’t affect the final decision.
+   * Important if you go beyond depth=2.
+
+3. **Move ordering**
+
+   * Evaluation order of moves strongly affects alpha-beta’s pruning efficiency.
+   * Simple heuristics:
+
+     * Try captures first.
+     * Try moves that move master towards central or safer squares.
+   * You can reuse 1-ply heuristic scores to order moves.
+
+4. **Transposition table**
+
+   * Onitama has repeated positions (symmetries, card swaps, etc.).
+   * Cache evaluated states so you don’t recompute them at deeper depths.
+   * This introduces the notion of a **state hashing function** (e.g., Zobrist-like).
+
+5. **Quiescence search (optional)**
+
+   * Idea: avoid evaluating “noisy” positions (e.g., in the middle of big capture sequences) at the depth frontier.
+   * If a leaf position has capture moves available, extend search deeper a bit.
+   * In Onitama, you might:
+
+     * Extend if the master is in immediate danger.
+     * Extend if there are multiple capture moves possible.
+
+6. **Evaluation perspective**
+
+   * Again, simplest: have (V) always return the score from the **player to move** viewpoint.
+   * Then minimax doesn’t need sign-flips; max nodes always “current player.”
+
+---
+
+### 4. Experiments to run with minimax
+
+1. **Depth vs strength curve**
+
+   * Run depth-1, 2, 3 agents in round-robin matches:
+
+     * How much does each extra ply help?
+     * Is depth=2 already crushing heuristic & 1-ply?
+   * You can establish a **difficulty ladder** for future RL agents.
+
+2. **Heuristic quality vs depth**
+
+   * For a weak heuristic, deeper search might overfit noise.
+   * For a better heuristic, depth helps more.
+   * Useful observation: RL will improve the heuristic, which will make minimax much stronger.
+
+3. **Time / node budget vs Elo**
+
+   * Impose a limit: “Agent may search at most N nodes or T milliseconds per move.”
+   * Compare:
+
+     * Depth-fixed vs time-fixed strategies.
+   * This is helpful if you ever want to deploy this as “play against AI level 1–5.”
+
+4. **Effect of alpha-beta and move ordering**
+
+   * Implement plain minimax vs alpha-beta + move ordering:
+
+     * Compare nodes searched.
+     * Compare actual playing strength for same time budget.
+
+**Outcome of Step D:**
+You have a controllable, search-based family of agents (by depth, by node/time budget, by heuristic weights) that define a **baseline “skill ladder”** for the rest of your RL exploration.
+
+---
+
+## How all of this feeds RL later
+
+As you think about design decisions for B/C/D, it’s helpful to view them as scaffolding for RL:
+
+* The heuristic (V(s; w)) is a **natural value function parameterization** for RL.
+* 1-ply and minimax agents can:
+
+  * Generate training data (state, action, outcome) for IL / offline RL.
+  * Serve as strong opponents for self-play.
+* The knobs you built (weights, depth, exploration temperature, etc.) will be:
+
+  * Parameters you compare RL agents against.
+  * Useful baselines (“Does PPO at iteration 100 beat depth-2 minimax?”).
+
+---
+
+If you’re up for it next, we can:
+
+* Enumerate a **concrete feature list** for (V(s)) that’s realistic to implement in your existing codebase.
+* Sketch an **experiment matrix** like:
+  rows = agents (heuristic variants, 1-ply, depth-2, depth-3)
+  columns = metrics (win rates vs each other, average length, etc.)
+  so you have a clear “Phase 1 experimental plan” even before touching RL.
+
