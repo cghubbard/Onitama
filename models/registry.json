@@ -1,0 +1,34 @@
+{
+  "models": [
+    {
+      "name": "trained_002_l1_sweep",
+      "path": "linear/trained_002_l1_sweep.json",
+      "elo": null,
+      "notes": "L1 regularization sweep (no L2) on 2000 heuristic self-play games"
+    },
+    {
+      "name": "_temp_investigation",
+      "path": "linear/_temp_investigation.json",
+      "elo": null,
+      "notes": "Re-running to see full CV results"
+    },
+    {
+      "name": "trained_001",
+      "path": "linear/trained_001.json",
+      "elo": 1051,
+      "notes": "First trained model on 2000 heuristic self-play games"
+    },
+    {
+      "name": "trained_003_all_games",
+      "path": "linear/trained_003_all_games.json",
+      "elo": 1045,
+      "notes": "L1 sweep on ALL 4000 games (heuristic self-play + games with trained_001)"
+    },
+    {
+      "name": "baseline_v1",
+      "path": "linear/baseline_v1.json",
+      "elo": 993,
+      "notes": "Hand-tuned baseline weights"
+    }
+  ]
+}

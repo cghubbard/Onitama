@@ -1,0 +1,59 @@
+{
+  "name": "baseline_v1",
+  "model_type": "linear",
+  "created": "2025-11-27T13:40:15.645004",
+  "elo": 993,
+  "weights": {
+    "material_diff_students": 10.0,
+    "my_master_alive": 1000.0,
+    "opp_master_captured": 500.0,
+    "master_safety_balance": 15.0,
+    "legal_moves_diff": 2.0,
+    "capture_moves_diff": 5.0,
+    "master_temple_distance_diff": 8.0,
+    "student_progress_diff": 3.0,
+    "central_control_diff": 4.0,
+    "card_mobility_diff": 1.0,
+    "master_escape_options": 3.0
+  },
+  "bias": 0.0,
+  "normalization": {
+    "means": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "stds": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "epsilon": 1e-08
+  },
+  "training": {
+    "data_source": "",
+    "num_games": 0,
+    "gamma": 0.97,
+    "lambda1": 0.0,
+    "lambda2": 0.0,
+    "val_loss": null,
+    "train_loss": null,
+    "notes": "Hand-tuned baseline weights"
+  }
+}

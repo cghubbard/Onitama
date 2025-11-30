@@ -15,6 +15,7 @@ from src.agents.linear_heuristic_agent import LinearHeuristicAgent
 from src.utils.renderer import ConsoleRenderer, ASCIIRenderer
 from src.logging.game_logger import GameLogger, GameLogSession, create_logger_from_args
 from src.game.serialization import determine_win_reason
+from src.evaluation.model_store import ModelStore
 
 # Agent type mapping
 AGENT_TYPES = {
@@ -22,6 +23,67 @@ AGENT_TYPES = {
     'heuristic': HeuristicAgent,
     'linear': LinearHeuristicAgent,
 }
+
+# Model store for loading versioned models
+_model_store = None
+
+def get_model_store():
+    """Get or create the model store singleton."""
+    global _model_store
+    if _model_store is None:
+        _model_store = ModelStore()
+    return _model_store
+
+
+def parse_agent_spec(spec: str) -> tuple:
+    """
+    Parse an agent specification string.
+
+    Formats:
+        'random'           -> ('random', None)
+        'heuristic'        -> ('heuristic', None)
+        'linear'           -> ('linear', None)  # uses default weights
+        'linear:baseline_v1' -> ('linear', 'baseline_v1')
+
+    Returns:
+        Tuple of (agent_type, model_name or None)
+    """
+    if ':' in spec:
+        agent_type, model_name = spec.split(':', 1)
+        return (agent_type.lower(), model_name)
+    return (spec.lower(), None)
+
+
+def create_agent(spec: str, player_id: int):
+    """
+    Create an agent from a specification string.
+
+    Args:
+        spec: Agent specification (e.g., 'random', 'linear:baseline_v1')
+        player_id: BLUE or RED
+
+    Returns:
+        Agent instance
+    """
+    agent_type, model_name = parse_agent_spec(spec)
+
+    if agent_type not in AGENT_TYPES:
+        raise ValueError(f"Unknown agent type: {agent_type}. "
+                        f"Available: {list(AGENT_TYPES.keys())}")
+
+    agent_class = AGENT_TYPES[agent_type]
+
+    # Handle model-based agents
+    if agent_type == 'linear' and model_name:
+        store = get_model_store()
+        if not store.exists(model_name):
+            available = [m.name for m in store.list_models()]
+            raise ValueError(f"Model '{model_name}' not found. "
+                           f"Available: {available}")
+        model = store.load(model_name)
+        return agent_class(player_id, weights=model.get_weight_vector())
+
+    return agent_class(player_id)
 
 
 def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, verbose=True, cards=None, max_moves=200, log_session=None, game=None):
@@ -45,13 +107,12 @@ def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, 
     # Create the game if not provided
     if game is None:
         game = Game(cards=cards)
-    
-    # Create the agents
-    agents = {}
-    blue_agent_class = AGENT_TYPES.get(blue_agent_type.lower(), HeuristicAgent)
-    red_agent_class = AGENT_TYPES.get(red_agent_type.lower(), HeuristicAgent)
-    agents[BLUE] = blue_agent_class(BLUE)
-    agents[RED] = red_agent_class(RED)
+
+    # Create the agents using the new create_agent function
+    agents = {
+        BLUE: create_agent(blue_agent_type, BLUE),
+        RED: create_agent(red_agent_type, RED),
+    }
     
     # Create the renderer
     if renderer_type.lower() == 'console':
@@ -159,11 +220,27 @@ def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, 
 
 def main():
     """Main function to parse arguments and run the game."""
-    parser = argparse.ArgumentParser(description='Run an Onitama game between two agents.')
-    parser.add_argument('--blue', type=str, choices=['random', 'heuristic', 'linear'], default='random',
-                        help='Type of agent for BLUE player (random, heuristic, or linear)')
-    parser.add_argument('--red', type=str, choices=['random', 'heuristic', 'linear'], default='heuristic',
-                        help='Type of agent for RED player (random, heuristic, or linear)')
+    parser = argparse.ArgumentParser(
+        description='Run an Onitama game between two agents.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Agent specification formats:
+  random              Random move selection
+  heuristic           Simple heuristic agent
+  linear              Linear agent with default weights
+  linear:MODEL_NAME   Linear agent with specific model (e.g., linear:baseline_v1)
+
+Examples:
+  python main.py --blue linear:baseline_v1 --red random --games 100 --quiet
+  python main.py --list-models
+'''
+    )
+    parser.add_argument('--blue', type=str, default='random',
+                        help='Agent for BLUE player (e.g., random, heuristic, linear, linear:baseline_v1)')
+    parser.add_argument('--red', type=str, default='heuristic',
+                        help='Agent for RED player (e.g., random, heuristic, linear, linear:baseline_v1)')
+    parser.add_argument('--list-models', action='store_true',
+                        help='List available models and exit')
     parser.add_argument('--renderer', type=str, choices=['console', 'ascii'], default='ascii',
                         help='Type of renderer to use')
     parser.add_argument('--delay', type=float, default=0.0,
@@ -186,6 +263,35 @@ def main():
                         help='Directory for storing game logs')
 
     args = parser.parse_args()
+
+    # Handle --list-models
+    if args.list_models:
+        store = get_model_store()
+        models = store.list_models()
+        if not models:
+            print("No models found.")
+        else:
+            print("Available models:")
+            print(f"{'Name':<20} {'Elo':<8} {'Notes'}")
+            print("-" * 60)
+            for m in models:
+                elo_str = str(m.elo) if m.elo else "-"
+                print(f"{m.name:<20} {elo_str:<8} {m.notes}")
+        return
+
+    # Validate agent specs early
+    for spec, label in [(args.blue, 'blue'), (args.red, 'red')]:
+        agent_type, model_name = parse_agent_spec(spec)
+        if agent_type not in AGENT_TYPES:
+            print(f"Error: Unknown agent type '{agent_type}' for --{label}")
+            print(f"Available types: {list(AGENT_TYPES.keys())}")
+            sys.exit(1)
+        if agent_type == 'linear' and model_name:
+            store = get_model_store()
+            if not store.exists(model_name):
+                print(f"Error: Model '{model_name}' not found for --{label}")
+                print(f"Available models: {[m.name for m in store.list_models()]}")
+                sys.exit(1)
 
     # Create game logger
     logger = create_logger_from_args(args.log, args.sample_rate, args.data_dir)

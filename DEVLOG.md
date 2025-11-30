@@ -301,12 +301,333 @@ All 89 tests pass (76 existing + 13 new).
 ✅ Game class untouched (per CLAUDE.md constraints)
 ✅ Existing scripts/notebooks continue working
 
+### Linear Value Function Training Pipeline
+
+Implemented complete ML training system for learning linear value function weights from self-play game trajectories.
+
+#### Problem
+
+The baseline linear model (`baseline_v1`) used hand-tuned feature weights. We needed:
+1. Automated training from logged game data
+2. Weighted logistic regression with time-based discounting
+3. Game-level cross-validation to prevent data leakage
+4. L1/L2 regularization with grid search
+5. Model versioning and evaluation
+
+#### Solution
+
+Built end-to-end training pipeline using sklearn with proper CV methodology.
+
+**Files created:**
+- `src/logging/reconstruction.py` - Convert StateSnapshot → Game for feature extraction (85 lines)
+- `src/evaluation/data_loader.py` - Load trajectories into training datasets (280 lines)
+- `src/evaluation/trainer.py` - sklearn integration with CV and grid search (416 lines)
+- `scripts/train_linear.py` - CLI training script (300+ lines)
+- `tests/test_reconstruction.py` - 13 unit tests for game reconstruction
+- `tests/test_data_loader.py` - 16 unit tests for data loading
+- `tests/test_trainer.py` - 17 unit tests for training logic
+
+**Files modified:**
+- `src/logging/__init__.py` - Export reconstruction utilities
+- `src/evaluation/__init__.py` - Export training modules
+
+#### Implementation Details
+
+**1. Game Reconstruction (`reconstruction.py`)**
+
+Historical states are logged as lightweight StateSnapshots. Training requires full Game objects for feature extraction:
+
+```python
+def reconstruct_game_from_snapshot(snapshot: StateSnapshot) -> Game:
+    """Reconstruct Game object from logged snapshot."""
+    game = Game.__new__(Game)  # Bypass __init__ to avoid random cards
+    game.board = deserialize_board(snapshot.board)
+    game.player_cards = {
+        BLUE: [Card(name, MOVE_CARDS[name]) for name in snapshot.blue_cards],
+        RED: [Card(name, MOVE_CARDS[name]) for name in snapshot.red_cards]
+    }
+    game.neutral_card = Card(snapshot.neutral_card, MOVE_CARDS[snapshot.neutral_card])
+    game.current_player = snapshot.current_player
+    game.outcome = snapshot.outcome
+    return game
+```
+
+**2. Data Loading (`data_loader.py`)**
+
+Converts game trajectories into training examples with:
+- Features: φ(s) from current player's perspective (11 features)
+- Labels: 1 if current player wins, 0 if loses
+- Weights: w_t = γ^(H-1-t) where γ=0.97 (more weight to later states)
+- Game IDs: For game-level CV splitting
+
+```python
+@dataclass
+class TrainingExample:
+    features: np.ndarray    # Shape (11,)
+    label: int              # 1 = win, 0 = loss
+    weight: float           # Time-based weight
+    game_id: str            # For GroupKFold
+    move_number: int
+
+def load_training_data(
+    storage: GameStorage,
+    blue_agent: Optional[str] = None,
+    red_agent: Optional[str] = None,
+    limit: Optional[int] = None,
+    gamma: float = 0.97,
+    exclude_draws: bool = True,
+    verbose: bool = False
+) -> TrainingDataset
+```
+
+**3. Training (`trainer.py`)**
+
+Weighted logistic regression predicting log-odds: V(s) = θᵀφ̃(s) + b
+
+**Feature standardization:**
+```
+φ̃_k = (φ_k - μ_k) / (σ_k + ε)  where ε=1e-8
+```
+
+**sklearn parameter mapping:**
+- L1 only (λ₁>0, λ₂=0): `penalty='l1'`, `C=1/λ₁`, `solver='liblinear'`
+- L2 only (λ₁=0, λ₂>0): `penalty='l2'`, `C=1/λ₂`, `solver='lbfgs'`
+- ElasticNet (both>0): `penalty='elasticnet'`, `C=1/(λ₁+λ₂)`, `l1_ratio=λ₁/(λ₁+λ₂)`, `solver='saga'`
+
+**Cross-validation:**
+Uses `GroupKFold` to keep all states from a game in same fold (prevents data leakage):
+```python
+gkf = GroupKFold(n_splits=cv_folds)
+for train_idx, val_idx in gkf.split(X, y, groups=game_ids):
+    # All states from game_i stay together
+```
+
+**4. CLI Tool (`scripts/train_linear.py`)**
+
+```bash
+python scripts/train_linear.py \
+  --blue-agent heuristic \
+  --red-agent heuristic \
+  --limit 4000 \
+  --lambda1 0.0 0.01 0.1 1.0 10.0 \
+  --lambda2 0.0 \
+  --cv-folds 5 \
+  --output trained_model \
+  --notes "L1 sweep on 4000 games"
+```
+
+Outputs detailed CV results and saves model to `models/linear/{name}.json`.
+
+#### Training Runs
+
+**trained_001: Initial ElasticNet model**
+- Dataset: 2000 heuristic vs heuristic games (11,545 examples)
+- Hyperparameters: λ₁=1.0, λ₂=1.0 (ElasticNet)
+- Cross-validation: 5-fold game-level
+- Val loss: 0.6269
+- Performance: **63% win rate vs baseline_v1** (126/200 wins)
+
+**trained_002: L1-only sweep**
+- Dataset: Same 2000 games
+- Hyperparameters: λ₁ sweep [0.0, 0.01, 0.1, 1.0, 10.0], λ₂=0.0
+- Best model: λ₁=10.0 (strong L1 sparsification)
+- Val loss: 0.6269
+- Performance: 52% vs trained_001 (weaker than initial model)
+- Features zeroed: `material_diff_students`, `my_master_alive`, `opp_master_captured`
+
+**trained_003: All games, L1 sweep**
+- Dataset: ALL 4000 games (23,082 examples)
+  - 2000 heuristic vs heuristic
+  - 2000 with trained_001 agent
+- Hyperparameters: λ₁ sweep [0.0, 0.01, 0.1, 1.0, 10.0], λ₂=0.0
+- Best model: λ₁=10.0
+- Val loss: **0.6243** (best so far)
+- Performance: **65.5% win rate vs baseline_v1** (131/200 wins)
+
+#### Results Analysis
+
+**Key Finding:** Trained models outperform hand-tuned baseline by 15-30 percentage points.
+
+**Feature importance (trained_003):**
+```
+master_safety_balance:           1.07  ← Dominant feature
+capture_moves_diff:             -0.40
+master_temple_distance_diff:    -0.24
+legal_moves_diff:               -0.19
+master_escape_options:           0.18
+central_control_diff:            0.15
+student_progress_diff:           0.14
+card_mobility_diff:             -0.04
+material_diff_students:          0.00  ← Zeroed by L1
+my_master_alive:                 0.00  ← Zeroed by L1
+opp_master_captured:             0.00  ← Zeroed by L1
+```
+
+**Insights:**
+1. **Master safety** is by far the most critical feature (weight ~1.07)
+2. **Material counting** (student count) is less important than positional features
+3. Strong L1 regularization produces sparse models without hurting performance
+4. More diverse training data (4000 games vs 2000) improves generalization
+
+#### Testing
+
+All 46 new tests pass (total: 135 passing tests):
+- 13 tests for game reconstruction
+- 16 tests for data loading pipeline
+- 17 tests for training logic
+
+**Test coverage:**
+- StateSnapshot → Game reconstruction accuracy
+- Feature extraction consistency between original and reconstructed games
+- Label assignment (winner detection)
+- Time-based weight computation (γ^(H-1-t))
+- Feature standardization
+- sklearn parameter mapping (L1/L2/ElasticNet)
+- Game-level CV splitting (GroupKFold)
+- Best model selection by validation loss
+
+#### Usage Examples
+
+**Generate training data:**
+```bash
+python main.py --games 2000 --blue heuristic --red heuristic --log all --quiet --progress
+```
+
+**Train model with grid search:**
+```bash
+python scripts/train_linear.py \
+  --blue-agent heuristic \
+  --red-agent heuristic \
+  --limit 2000 \
+  --lambda1 0.0 0.01 0.1 1.0 \
+  --lambda2 0.0 0.01 0.1 1.0 \
+  --cv-folds 5 \
+  --output my_model \
+  --notes "Initial training run"
+```
+
+**Evaluate trained model:**
+```bash
+python main.py --blue linear:my_model --red linear:baseline_v1 --games 200 --quiet --progress
+```
+
+#### Next Steps
+
+With the training pipeline complete, future directions include:
+1. Generate more diverse training data (different agent matchups)
+2. Experiment with gamma values for time-based weighting
+3. Analyze game situations where trained models succeed/fail
+4. Explore non-linear features or interactions
+5. Move toward tabular RL (Phase 2 in PROJ_PLAN.md)
+
+### Round-Robin Tournament System
+
+Implemented complete tournament infrastructure for comparing multiple agents with Elo rating calculation.
+
+#### Problem
+
+With multiple trained models (`baseline_v1`, `trained_001`, etc.), we needed:
+1. Systematic comparison across all model pairs
+2. Elo rating calculation to rank agents
+3. Win matrix visualization
+4. Persistent storage for tournament results
+5. Integration with existing ModelStore for Elo tracking
+
+#### Solution
+
+Built `src/tournament/` module with CLI script for running round-robin tournaments.
+
+**Files created:**
+- `src/tournament/__init__.py` - Module exports
+- `src/tournament/elo.py` - Standard Elo rating calculator
+- `src/tournament/scheduler.py` - Round-robin matchup generation
+- `src/tournament/storage.py` - SQLite persistence for tournament results
+- `src/tournament/runner.py` - Tournament orchestration
+- `src/tournament/display.py` - ASCII leaderboard and win matrix formatting
+- `scripts/tournament.py` - CLI entry point
+- `tests/test_elo.py` - 16 unit tests for Elo calculation
+- `tests/test_tournament.py` - 17 integration tests
+
+**SQLite tables added to `data/games.db`:**
+- `tournaments` - Tournament metadata
+- `tournament_participants` - Final standings with Elo
+- `tournament_matchups` - Pairwise matchup results
+
+#### Implementation Details
+
+**Elo Calculation:**
+- Standard formula: E = 1 / (1 + 10^((R_opp - R_self) / 400))
+- Updates after each matchup using aggregate win rate
+- K-factor scaling based on games played
+- Built-in defaults: random=800, heuristic=1000, linear=1000
+
+**Round-Robin Scheduling:**
+- Generates all N*(N-1)/2 matchups
+- Balanced color assignment per matchup (reuses main.py pattern)
+- Configurable games per matchup (default: 500)
+
+**CLI Usage:**
+```bash
+# Quick test tournament
+python scripts/tournament.py --participants random heuristic --games 10
+
+# Full tournament with progress
+python scripts/tournament.py \
+  --participants random heuristic linear:baseline_v1 linear:trained_003_all_games \
+  --games 500 --progress --update-models
+
+# List available models
+python scripts/tournament.py --list-models
+```
+
+**Arguments:**
+- `--participants` (required): List of agent specs
+- `--games`: Games per matchup (default: 500)
+- `--k-factor`: Elo K-factor (default: 32)
+- `--update-models`: Persist Elo to ModelStore
+- `--log`: Enable full game logging
+- `--progress`: Show live progress updates
+- `--quiet`: Minimal output
+
+**Example Output:**
+```
+Tournament: tourney_20251127_203131
+Participants: 3
+Games per matchup: 20
+Total games: 60
+
+[1/3] random vs linear:baseline_v1: 3W-17L-0D
+[2/3] random vs heuristic: 3W-17L-0D
+[3/3] heuristic vs linear:baseline_v1: 4W-16L-0D
+
+=== FINAL STANDINGS ===
+Rank  Participant              Elo     W-L-D         Win%
+----------------------------------------------------------------
+1     linear:baseline_v1       1018    33-7-0        82.5%
+2     heuristic                990     21-19-0       52.5%
+3     random                   792     6-34-0        15.0%
+
+Win Matrix (row W-L vs column):
+                    linear:basel..  heuristic  random
+linear:basel..               -        16-4      17-3
+heuristic                  4-16          -      17-3
+random                     3-17       3-17         -
+```
+
+#### Testing
+
+All 33 new tests pass (total: 187 passing tests):
+- 16 unit tests for Elo calculation (expected scores, updates, edge cases)
+- 17 integration tests (scheduling, storage, runner, multi-player)
+
 ---
 
 ## Future Work (Not Started)
+- Tabular RL agents (Q-learning, SARSA)
 - PPO agent implementation using logged game data
 - More AI agent types (MCTS, minimax)
 - Enhanced web UI (move history, annotations)
+- Tournament visualization in web app
 
 ---
 

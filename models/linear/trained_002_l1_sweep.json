@@ -1,0 +1,59 @@
+{
+  "name": "trained_002_l1_sweep",
+  "model_type": "linear",
+  "created": "2025-11-27T20:01:17.739599",
+  "elo": null,
+  "weights": {
+    "material_diff_students": 0.022053993888824158,
+    "my_master_alive": 0.0,
+    "opp_master_captured": 0.0,
+    "master_safety_balance": 1.0706316592893355,
+    "legal_moves_diff": -0.19551970150313686,
+    "capture_moves_diff": -0.4044730855701184,
+    "master_temple_distance_diff": -0.19533413283761766,
+    "student_progress_diff": 0.06713499517162735,
+    "central_control_diff": 0.1529594731642343,
+    "card_mobility_diff": -0.04784765259213095,
+    "master_escape_options": 0.1660511710201476
+  },
+  "bias": 0.21052072387277457,
+  "normalization": {
+    "means": [
+      -0.004106596767147226,
+      1.0,
+      0.0,
+      0.07767584097859327,
+      -0.7505460899956313,
+      -0.046832678025338574,
+      -0.1927479248580166,
+      -0.0005606523955147803,
+      -0.10476190476190476,
+      -0.7505460899956313,
+      3.7408475316732197
+    ],
+    "stds": [
+      0.0797588052315655,
+      0.0,
+      0.0,
+      0.5892547497494706,
+      3.909715124353593,
+      0.5436714569359229,
+      1.0886762988529104,
+      0.04186447843778236,
+      0.6654022834952972,
+      3.909715124353593,
+      1.5808860978669799
+    ],
+    "epsilon": 1e-08
+  },
+  "training": {
+    "data_source": "2000 games",
+    "num_games": 2000,
+    "gamma": 0.97,
+    "lambda1": 10.0,
+    "lambda2": 0.0,
+    "val_loss": 0.6268841696090969,
+    "train_loss": 0.6251907160083864,
+    "notes": "L1 regularization sweep (no L2) on 2000 heuristic self-play games"
+  }
+}

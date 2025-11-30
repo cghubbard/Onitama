@@ -6,9 +6,11 @@
       "Bash(timeout 5 python:*)",
       "Bash(python:*)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(sqlite3:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "model": "opusplan"
 }
