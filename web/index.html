@@ -14,6 +14,7 @@
         <div class="tabs">
             <button class="tab active" data-target="play">Play</button>
             <button class="tab" data-target="replays">Replays</button>
+            <button class="tab" data-target="sandbox">Sandbox</button>
         </div>
 
         <!-- Setup Panel -->
@@ -104,6 +105,83 @@
             <div id="replay-list"></div>
         </div>
 
+        <!-- Sandbox Panel -->
+        <div id="sandbox-panel" class="hidden">
+            <h2>Linear Heuristic Sandbox</h2>
+            <p class="panel-description">
+                Analyze positions from replayed games using the linear evaluation function V(s) = w<sup>T</sup> * &phi;(s)
+            </p>
+
+            <!-- Game Selection (shown when no game loaded) -->
+            <div id="sandbox-game-list">
+                <h3>Select a Game to Analyze</h3>
+                <div id="sandbox-replay-list"></div>
+            </div>
+
+            <!-- Evaluation View (hidden until game selected) -->
+            <div id="sandbox-evaluation" class="hidden">
+                <!-- Navigation -->
+                <div id="sandbox-nav">
+                    <button id="sandbox-back">&larr; Back to Games</button>
+                    <div id="sandbox-move-nav">
+                        <button id="sandbox-prev">&lt; Prev</button>
+                        <span id="sandbox-move-info">Move 1 of 1</span>
+                        <button id="sandbox-next">Next &gt;</button>
+                    </div>
+                </div>
+
+                <!-- Main Content: Board + Evaluation -->
+                <div id="sandbox-content">
+                    <!-- Board Section -->
+                    <div id="sandbox-board-section">
+                        <div id="sandbox-board-container">
+                            <div id="sandbox-blue-cards" class="card-area"></div>
+                            <div id="sandbox-board"></div>
+                            <div id="sandbox-red-cards" class="card-area"></div>
+                        </div>
+                        <div id="sandbox-neutral-area">
+                            <span class="label">Neutral</span>
+                            <div id="sandbox-neutral-card" class="card-area horizontal"></div>
+                        </div>
+                    </div>
+
+                    <!-- Evaluation Section -->
+                    <div id="sandbox-eval-section">
+                        <!-- Current Position -->
+                        <div class="eval-panel">
+                            <h3>Current Position</h3>
+                            <div id="sandbox-current-score" class="score-display">0.00</div>
+                            <div id="sandbox-current-features" class="feature-breakdown"></div>
+                        </div>
+
+                        <!-- Move Scores -->
+                        <div class="eval-panel">
+                            <h3>Move Evaluations <span class="hint">(click to compare)</span></h3>
+                            <div id="sandbox-move-scores" class="move-list"></div>
+                        </div>
+
+                        <!-- Comparison Panel -->
+                        <div id="sandbox-comparison" class="eval-panel hidden">
+                            <h3>Move Comparison</h3>
+                            <div id="sandbox-comparison-header"></div>
+                            <table id="sandbox-comparison-table">
+                                <thead>
+                                    <tr>
+                                        <th>Feature</th>
+                                        <th>Move A</th>
+                                        <th>Move B</th>
+                                        <th>&Delta;</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            <button id="sandbox-clear-comparison">Clear Comparison</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Game Over Overlay -->
         <div id="game-over-overlay" class="hidden">
             <div id="game-over-panel">
@@ -117,6 +195,7 @@
     <script src="/static/js/websocket.js"></script>
     <script src="/static/js/board.js"></script>
     <script src="/static/js/game.js"></script>
+    <script src="/static/js/sandbox.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

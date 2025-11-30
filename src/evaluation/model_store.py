@@ -36,8 +36,8 @@ class TrainingInfo:
 @dataclass
 class NormalizationStats:
     """Feature normalization statistics."""
-    means: List[float] = field(default_factory=lambda: [0.0] * 11)
-    stds: List[float] = field(default_factory=lambda: [1.0] * 11)
+    means: List[float] = field(default_factory=lambda: [0.0] * 14)
+    stds: List[float] = field(default_factory=lambda: [1.0] * 14)
     epsilon: float = 1e-8
 
 

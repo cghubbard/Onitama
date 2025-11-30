@@ -622,12 +622,73 @@ All 33 new tests pass (total: 187 passing tests):
 
 ---
 
+## Session: November 30, 2025
+
+### Linear Heuristic Evaluation Sandbox
+
+Added a new "Sandbox" tab to the web app for analyzing how the linear heuristic model evaluates game positions.
+
+#### Features
+
+1. **Position Evaluation**: Load any replayed game and step through positions to see:
+   - Current position score (V(s) = w^T * φ(s))
+   - Feature breakdown showing each feature's value, weight, and contribution
+   - All legal moves ranked by score
+
+2. **Move Comparison**: Click any two moves in the list to see side-by-side comparison:
+   - Total score difference
+   - Per-feature contribution comparison with delta values
+   - Visual highlighting (blue = Move A, red = Move B)
+
+3. **Board Visualization**:
+   - Full board state with pieces and cards
+   - Hover over moves to see them highlighted on the board
+
+#### Files Created
+
+- `src/web/sandbox_models.py` - Pydantic schemas (FeatureBreakdown, MoveEvaluation, etc.)
+- `src/web/sandbox.py` - FastAPI router with `/api/sandbox/evaluate` and `/api/sandbox/models` endpoints
+- `web/js/sandbox.js` - Frontend SandboxController class
+
+#### Files Modified
+
+- `src/web/app.py` - Include sandbox router, initialize storage
+- `web/index.html` - Add Sandbox tab and panel HTML
+- `web/js/app.js` - Initialize sandbox controller, add tab switching
+- `web/css/style.css` - Add sandbox styling (280+ lines)
+
+#### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/sandbox/models` | GET | List available evaluation models with default weights |
+| `/api/sandbox/evaluate` | POST | Evaluate all legal moves at a position |
+
+#### Usage
+
+1. Start the web server: `python run_web.py`
+2. Click the "Sandbox" tab
+3. Select a game from the replay list
+4. Navigate through moves with Prev/Next buttons
+5. Click moves to compare them side-by-side
+
+---
+
 ## Future Work (Not Started)
+
+### Model Evaluation Enhancements
+- **Interactive Weight Adjustment**: Add sliders to modify the 11 feature weights in real-time and see how scores change
+- **Log Top N Moves**: Extend `Transition` dataclass to include optional `move_evaluations` from the agent, enabling faster replay analysis
+
+### Core RL Development
 - Tabular RL agents (Q-learning, SARSA)
 - PPO agent implementation using logged game data
 - More AI agent types (MCTS, minimax)
+
+### Web UI Enhancements
 - Enhanced web UI (move history, annotations)
 - Tournament visualization in web app
+- Additional model-specific sandboxes for future agents (neural network policy/value visualization)
 
 ---
 

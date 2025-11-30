@@ -24,18 +24,17 @@ class LinearHeuristicAgent(Agent):
     Evaluates board positions using a feature-based linear function:
     V(s) = w^T * φ(s)
 
-    where φ(s) is a vector of 11 features and w is a weight vector.
+    where φ(s) is a vector of 14 features and w is a weight vector.
 
     Features include:
     - Material balance (student count difference)
     - Master survival indicators
     - Master safety (threat balance)
-    - Mobility (legal moves difference)
-    - Capture opportunities
-    - Temple distance progress
-    - Student advancement
+    - Mobility (my_legal_moves, opp_legal_moves)
+    - Capture opportunities (my_capture_moves, opp_capture_moves)
+    - Temple distance (my_master_temple_distance, opp_master_temple_distance)
+    - Student progress (my_student_progress, opp_student_progress)
     - Central control
-    - Card mobility
     - Master escape options
     """
 
@@ -50,7 +49,7 @@ class LinearHeuristicAgent(Agent):
 
         Args:
             player_id: The player ID (BLUE or RED) this agent controls
-            weights: Custom weight vector (11 floats) or None for defaults
+            weights: Custom weight vector (14 floats) or None for defaults
             randomize: Whether to add randomization to break ties
         """
         super().__init__(player_id)
@@ -142,7 +141,7 @@ class LinearHeuristicAgent(Agent):
         Get the current weight vector.
 
         Returns:
-            List of 11 weights
+            List of 14 weights
         """
         return self.weights.copy()
 
@@ -151,8 +150,8 @@ class LinearHeuristicAgent(Agent):
         Set new weights for the evaluation function.
 
         Args:
-            weights: List of 11 weights
+            weights: List of 14 weights
         """
-        if len(weights) != 11:
-            raise ValueError(f"Expected 11 weights, got {len(weights)}")
+        if len(weights) != 14:
+            raise ValueError(f"Expected 14 weights, got {len(weights)}")
         self.weights = weights.copy()

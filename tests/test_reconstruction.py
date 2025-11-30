@@ -114,12 +114,15 @@ class TestGameReconstruction:
         assert original_features.my_master_alive == reconstructed_features.my_master_alive
         assert original_features.opp_master_captured == reconstructed_features.opp_master_captured
         assert original_features.master_safety_balance == reconstructed_features.master_safety_balance
-        assert original_features.legal_moves_diff == reconstructed_features.legal_moves_diff
-        assert original_features.capture_moves_diff == reconstructed_features.capture_moves_diff
-        assert original_features.master_temple_distance_diff == reconstructed_features.master_temple_distance_diff
-        assert original_features.student_progress_diff == reconstructed_features.student_progress_diff
+        assert original_features.my_legal_moves == reconstructed_features.my_legal_moves
+        assert original_features.opp_legal_moves == reconstructed_features.opp_legal_moves
+        assert original_features.my_capture_moves == reconstructed_features.my_capture_moves
+        assert original_features.opp_capture_moves == reconstructed_features.opp_capture_moves
+        assert original_features.my_master_temple_distance == reconstructed_features.my_master_temple_distance
+        assert original_features.opp_master_temple_distance == reconstructed_features.opp_master_temple_distance
+        assert original_features.my_student_progress == reconstructed_features.my_student_progress
+        assert original_features.opp_student_progress == reconstructed_features.opp_student_progress
         assert original_features.central_control_diff == reconstructed_features.central_control_diff
-        assert original_features.card_mobility_diff == reconstructed_features.card_mobility_diff
         assert original_features.master_escape_options == reconstructed_features.master_escape_options
 
     def test_features_as_array_match(self, initial_game, initial_snapshot, extractor):

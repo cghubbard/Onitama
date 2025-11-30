@@ -69,13 +69,14 @@ class TestFeatureExtractor:
 
         # BLUE master at (2, 0), enemy temple at (2, 4) -> distance 4
         # RED master at (2, 4), BLUE temple at (2, 0) -> distance 4
-        # Difference should be 0
-        assert features.master_temple_distance_diff == 0.0
+        assert features.my_master_temple_distance == 4.0
+        assert features.opp_master_temple_distance == 4.0
 
     def test_temple_distance_from_red_perspective(self, extractor, starting_game):
-        """Temple distance should also be 0 from RED's perspective at start."""
+        """Temple distance should be symmetric from RED's perspective at start."""
         features = extractor.extract(starting_game, RED)
-        assert features.master_temple_distance_diff == 0.0
+        assert features.my_master_temple_distance == 4.0
+        assert features.opp_master_temple_distance == 4.0
 
     # =========================================================================
     # Test 4: Student progress
@@ -86,8 +87,8 @@ class TestFeatureExtractor:
 
         # BLUE students at y=0, need to reach RED temple at (2, 4)
         # RED students at y=4, need to reach BLUE temple at (2, 0)
-        # Both have similar average distances, so diff should be ~0
-        assert abs(features.student_progress_diff) < 0.1
+        # Both have similar average distances
+        assert abs(features.my_student_progress - features.opp_student_progress) < 0.1
 
     # =========================================================================
     # Test 5: Mobility features
@@ -97,16 +98,19 @@ class TestFeatureExtractor:
         features = extractor.extract(starting_game, BLUE)
 
         # Legal moves should be computed for both players
-        # The difference depends on the specific cards
-        # Just verify it's an integer
-        assert isinstance(features.legal_moves_diff, int)
+        # Just verify they are non-negative integers
+        assert isinstance(features.my_legal_moves, int)
+        assert isinstance(features.opp_legal_moves, int)
+        assert features.my_legal_moves >= 0
+        assert features.opp_legal_moves >= 0
 
     def test_capture_moves_at_start(self, extractor, starting_game):
         """At start, no capture moves should be available."""
         features = extractor.extract(starting_game, BLUE)
 
         # No pieces are adjacent, so no captures possible
-        assert features.capture_moves_diff == 0
+        assert features.my_capture_moves == 0
+        assert features.opp_capture_moves == 0
 
     def test_master_safety_at_start(self, extractor, starting_game):
         """At start, no master threats should exist."""
@@ -118,25 +122,25 @@ class TestFeatureExtractor:
     # =========================================================================
     # Test 6: Feature vector structure
     # =========================================================================
-    def test_feature_vector_has_11_elements(self, extractor, starting_game):
-        """Feature vector should have exactly 11 elements."""
+    def test_feature_vector_has_14_elements(self, extractor, starting_game):
+        """Feature vector should have exactly 14 elements."""
         features = extractor.extract(starting_game, BLUE)
-        assert len(features) == 11
+        assert len(features) == 14
 
     def test_extract_as_array(self, extractor, starting_game):
         """extract_as_array should return a list of floats."""
         array = extractor.extract_as_array(starting_game, BLUE)
         assert isinstance(array, list)
-        assert len(array) == 11
+        assert len(array) == 14
         assert all(isinstance(x, (int, float)) for x in array)
 
     def test_feature_names_count(self):
-        """Should have 11 feature names."""
-        assert len(FEATURE_NAMES) == 11
+        """Should have 14 feature names."""
+        assert len(FEATURE_NAMES) == 14
 
     def test_default_weights_count(self):
-        """Should have 11 default weights."""
-        assert len(DEFAULT_WEIGHT_VECTOR) == 11
+        """Should have 14 default weights."""
+        assert len(DEFAULT_WEIGHT_VECTOR) == 14
 
     # =========================================================================
     # Test 7: Evaluation function
@@ -240,8 +244,8 @@ class TestFeatureExtractor:
         features = extractor.extract(game, BLUE)
         assert features.my_master_alive == 0
         assert features.opp_master_captured == 0
-        # Temple distance should reflect disadvantage
-        assert features.master_temple_distance_diff < 0
+        # My master distance should be sentinel value when dead
+        assert features.my_master_temple_distance == 10.0
 
 
 class TestGameCopy:
@@ -306,7 +310,7 @@ class TestLinearHeuristicAgent:
         from src.agents.linear_heuristic_agent import LinearHeuristicAgent
 
         game = Game(cards=['Tiger', 'Dragon', 'Frog', 'Rabbit', 'Crab'])
-        custom_weights = [1.0] * 11
+        custom_weights = [1.0] * 14
         agent = LinearHeuristicAgent(BLUE, weights=custom_weights)
 
         move = agent.select_move(game)

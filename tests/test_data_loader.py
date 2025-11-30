@@ -407,8 +407,8 @@ class TestDataLoader:
         for example in dataset.examples:
             # Features should be numpy array
             assert isinstance(example.features, np.ndarray)
-            # Should have 11 features
-            assert len(example.features) == 11
+            # Should have 14 features
+            assert len(example.features) == 14
             # Should be numeric
             assert example.features.dtype in [np.float32, np.float64]
 

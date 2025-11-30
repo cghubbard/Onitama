@@ -14,6 +14,7 @@ from src.web.models import (
 )
 from src.web.game_manager import GameManager
 from src.web.websocket import ConnectionManager, GameWebSocketHandler
+from src.web.sandbox import router as sandbox_router, set_storage as set_sandbox_storage
 from src.logging.storage import GameStorage
 from src.game.serialization import serialize_all_cards
 
@@ -40,6 +41,13 @@ async def startup():
     game_manager = GameManager(data_dir="data")
     connection_manager = ConnectionManager(game_manager)
     ws_handler = GameWebSocketHandler(connection_manager)
+
+    # Initialize sandbox with storage
+    set_sandbox_storage(storage)
+
+
+# Include sandbox router
+app.include_router(sandbox_router)
 
 
 # =============================================================================

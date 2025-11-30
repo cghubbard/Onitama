@@ -3,6 +3,11 @@ Feature extraction for Onitama board positions.
 
 Extracts features for the linear heuristic evaluation function V(s) = w^T * φ(s).
 All features are computed from a specified player's perspective.
+
+Feature Design:
+    Features are split into player and opponent components where appropriate,
+    allowing independent weighting of "real" (my turn) vs "hypothetical"
+    (opponent's potential) values.
 """
 
 from typing import Dict, List, Tuple, Optional, NamedTuple, TYPE_CHECKING
@@ -14,17 +19,20 @@ from src.utils.constants import BLUE, RED, PAWN, MASTER, BLUE_SHRINE, RED_SHRINE
 
 
 class FeatureVector(NamedTuple):
-    """Named tuple holding all 11 features."""
+    """Named tuple holding all 14 features."""
     material_diff_students: int
     my_master_alive: int
     opp_master_captured: int
     master_safety_balance: int
-    legal_moves_diff: int
-    capture_moves_diff: int
-    master_temple_distance_diff: float
-    student_progress_diff: float
+    my_legal_moves: int
+    opp_legal_moves: int
+    my_capture_moves: int
+    opp_capture_moves: int
+    my_master_temple_distance: float
+    opp_master_temple_distance: float
+    my_student_progress: float
+    opp_student_progress: float
     central_control_diff: int
-    card_mobility_diff: int
     master_escape_options: int
 
 
@@ -52,7 +60,7 @@ class FeatureExtractor:
             perspective: Player perspective (BLUE=0 or RED=1)
 
         Returns:
-            FeatureVector with all 11 features
+            FeatureVector with all 14 features
         """
         me, opp = self._get_players(perspective)
         my_temple, enemy_temple = self._get_temples(perspective)
@@ -64,15 +72,15 @@ class FeatureExtractor:
          opp_student_positions) = self._compute_material_features(board, me, opp)
 
         # Phase 2: Positional features
-        (master_dist_diff, student_progress_diff,
+        (my_master_dist, opp_master_dist, my_student_prog, opp_student_prog,
          central_control_diff) = self._compute_positional_features(
             board, me, opp, my_master_pos, opp_master_pos,
             my_student_positions, opp_student_positions,
             my_temple, enemy_temple)
 
         # Phase 3: Mobility features (computes legal moves for both players)
-        (legal_diff, capture_diff, safety_balance,
-         escape_options, card_mobility_diff) = self._compute_mobility_features(
+        (my_legal, opp_legal, my_captures, opp_captures, safety_balance,
+         escape_options) = self._compute_mobility_features(
             game, me, opp, board, my_master_pos, opp_master_pos)
 
         return FeatureVector(
@@ -80,12 +88,15 @@ class FeatureExtractor:
             my_master_alive=my_master_alive,
             opp_master_captured=opp_master_captured,
             master_safety_balance=safety_balance,
-            legal_moves_diff=legal_diff,
-            capture_moves_diff=capture_diff,
-            master_temple_distance_diff=master_dist_diff,
-            student_progress_diff=student_progress_diff,
+            my_legal_moves=my_legal,
+            opp_legal_moves=opp_legal,
+            my_capture_moves=my_captures,
+            opp_capture_moves=opp_captures,
+            my_master_temple_distance=my_master_dist,
+            opp_master_temple_distance=opp_master_dist,
+            my_student_progress=my_student_prog,
+            opp_student_progress=opp_student_prog,
             central_control_diff=central_control_diff,
-            card_mobility_diff=card_mobility_diff,
             master_escape_options=escape_options
         )
 
@@ -98,7 +109,7 @@ class FeatureExtractor:
             perspective: Player perspective (BLUE=0 or RED=1)
 
         Returns:
-            List of 11 floats
+            List of 14 floats
         """
         fv = self.extract(game, perspective)
         return list(fv)
@@ -110,7 +121,7 @@ class FeatureExtractor:
         Args:
             game: The current game state
             perspective: Player perspective
-            weights: List of 11 weights
+            weights: List of 14 weights
 
         Returns:
             Scalar evaluation score
@@ -195,57 +206,53 @@ class FeatureExtractor:
         opp_student_positions: List[Tuple[int, int]],
         my_temple: Tuple[int, int],
         enemy_temple: Tuple[int, int]
-    ) -> Tuple[float, float, int]:
+    ) -> Tuple[float, float, float, float, int]:
         """
         Compute positional/progress features.
 
         Returns:
             Tuple of:
-            - master_temple_distance_diff: opp master dist to my temple - my master dist to enemy temple
-            - student_progress_diff: opp avg student dist to my temple - my avg to enemy temple
+            - my_master_temple_distance: my master's distance to enemy temple (lower = closer to win)
+            - opp_master_temple_distance: opponent's distance to my temple (higher = safer)
+            - my_student_progress: avg distance of my students to enemy temple
+            - opp_student_progress: avg distance of opponent students to my temple
             - central_control_diff: my pieces in center - opponent pieces in center
         """
-        # master_temple_distance_diff
-        # Higher = better (opponent farther from winning, I'm closer)
-        if my_master_pos is not None and opp_master_pos is not None:
-            opp_dist = self._manhattan_distance(opp_master_pos, my_temple)
-            my_dist = self._manhattan_distance(my_master_pos, enemy_temple)
-            master_temple_distance_diff = float(opp_dist - my_dist)
-        elif my_master_pos is not None:
-            # Opponent master dead - large positive value
-            master_temple_distance_diff = 10.0
-        elif opp_master_pos is not None:
-            # My master dead - large negative value
-            master_temple_distance_diff = -10.0
+        # Master temple distances
+        if my_master_pos is not None:
+            my_master_dist = float(self._manhattan_distance(my_master_pos, enemy_temple))
         else:
-            # Both masters dead (shouldn't happen normally)
-            master_temple_distance_diff = 0.0
+            # My master dead - use sentinel value
+            my_master_dist = 10.0
 
-        # student_progress_diff
-        # opp avg student dist to my temple minus my avg student dist to enemy temple
-        # Higher = better (opponent students farther, mine closer)
-        if my_student_positions:
-            my_avg = sum(self._manhattan_distance(pos, enemy_temple)
-                        for pos in my_student_positions) / len(my_student_positions)
+        if opp_master_pos is not None:
+            opp_master_dist = float(self._manhattan_distance(opp_master_pos, my_temple))
         else:
-            my_avg = 8.0  # Max distance if no students
+            # Opponent master dead - use sentinel value
+            opp_master_dist = 10.0
+
+        # Student progress (average distance to opponent's temple)
+        if my_student_positions:
+            my_student_prog = sum(self._manhattan_distance(pos, enemy_temple)
+                                  for pos in my_student_positions) / len(my_student_positions)
+        else:
+            my_student_prog = 8.0  # Max distance if no students
 
         if opp_student_positions:
-            opp_avg = sum(self._manhattan_distance(pos, my_temple)
-                         for pos in opp_student_positions) / len(opp_student_positions)
+            opp_student_prog = sum(self._manhattan_distance(pos, my_temple)
+                                   for pos in opp_student_positions) / len(opp_student_positions)
         else:
-            opp_avg = 8.0  # Max distance if no students
+            opp_student_prog = 8.0  # Max distance if no students
 
-        student_progress_diff = opp_avg - my_avg
-
-        # central_control_diff
+        # central_control_diff (kept as diff - symmetric feature)
         my_central = sum(1 for pos, (player, _) in board.items()
                         if player == me and pos in self.CENTRAL_SQUARES)
         opp_central = sum(1 for pos, (player, _) in board.items()
                          if player == opp and pos in self.CENTRAL_SQUARES)
         central_control_diff = my_central - opp_central
 
-        return (master_temple_distance_diff, student_progress_diff, central_control_diff)
+        return (my_master_dist, opp_master_dist, my_student_prog, opp_student_prog,
+                central_control_diff)
 
     def _compute_moves_for_player(
         self,
@@ -298,28 +305,29 @@ class FeatureExtractor:
         board: Dict[Tuple[int, int], Tuple[int, int]],
         my_master_pos: Optional[Tuple[int, int]],
         opp_master_pos: Optional[Tuple[int, int]]
-    ) -> Tuple[int, int, int, int, int]:
+    ) -> Tuple[int, int, int, int, int, int]:
         """
         Compute all mobility-related features.
 
         Returns:
             Tuple of:
-            - legal_moves_diff: my legal moves - opponent legal moves
-            - capture_moves_diff: my captures - opponent captures
+            - my_legal_moves: count of my legal moves
+            - opp_legal_moves: count of opponent's legal moves
+            - my_capture_moves: count of my capture opportunities
+            - opp_capture_moves: count of opponent's capture threats on my pieces
             - master_safety_balance: my threats on opp master - opp threats on my master
             - master_escape_options: number of moves for my master
-            - card_mobility_diff: total moves from my cards - opponent cards
         """
         my_moves = self._compute_moves_for_player(game, me)
         opp_moves = self._compute_moves_for_player(game, opp)
 
-        # legal_moves_diff
-        legal_moves_diff = len(my_moves) - len(opp_moves)
+        # Legal move counts (split from legal_moves_diff)
+        my_legal = len(my_moves)
+        opp_legal = len(opp_moves)
 
-        # capture_moves_diff: moves where to_pos has opponent piece
+        # Capture move counts (split from capture_moves_diff)
         my_captures = sum(1 for m in my_moves if m[1] in board and board[m[1]][0] == opp)
         opp_captures = sum(1 for m in opp_moves if m[1] in board and board[m[1]][0] == me)
-        capture_moves_diff = my_captures - opp_captures
 
         # master_safety_balance: my moves capturing opp master - opp moves capturing my master
         my_master_threats = 0
@@ -338,10 +346,5 @@ class FeatureExtractor:
         else:
             master_escape_options = 0
 
-        # card_mobility_diff: count of moves enabled by each player's cards
-        # This is the same as legal_moves_diff since all moves come from cards
-        # But we compute it explicitly for clarity
-        card_mobility_diff = len(my_moves) - len(opp_moves)
-
-        return (legal_moves_diff, capture_moves_diff, master_safety_balance,
-                master_escape_options, card_mobility_diff)
+        return (my_legal, opp_legal, my_captures, opp_captures,
+                master_safety_balance, master_escape_options)

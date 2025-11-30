@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.setupPanel = document.getElementById('setup-panel');
     elements.gameArea = document.getElementById('game-area');
     elements.replayPanel = document.getElementById('replay-panel');
+    elements.sandboxPanel = document.getElementById('sandbox-panel');
     elements.gameOverOverlay = document.getElementById('game-over-overlay');
     elements.blueAgentSelect = document.getElementById('blue-agent');
     elements.redAgentSelect = document.getElementById('red-agent');
@@ -34,6 +35,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize game controller
     gameController = new GameController();
     await gameController.init();
+
+    // Initialize sandbox controller
+    if (window.sandboxController) {
+        await window.sandboxController.init();
+    }
 
     // Set up event listeners
     setupEventListeners();
@@ -138,6 +144,7 @@ function showSetup() {
     elements.setupPanel.classList.remove('hidden');
     elements.gameArea.classList.add('hidden');
     if (elements.replayPanel) elements.replayPanel.classList.add('hidden');
+    if (elements.sandboxPanel) elements.sandboxPanel.classList.add('hidden');
 
     // Hide replay controls when showing setup
     const replayControls = document.getElementById('replay-controls');
@@ -181,15 +188,28 @@ function switchTab(target) {
         showSetup();
     } else if (target === 'replays') {
         loadReplays();
+    } else if (target === 'sandbox') {
+        showSandbox();
+    }
+}
+
+function showSandbox() {
+    elements.setupPanel.classList.add('hidden');
+    elements.gameArea.classList.add('hidden');
+    if (elements.replayPanel) elements.replayPanel.classList.add('hidden');
+    if (elements.sandboxPanel) elements.sandboxPanel.classList.remove('hidden');
+
+    // Load game list in sandbox
+    if (window.sandboxController) {
+        window.sandboxController.loadGameList();
     }
 }
 
 async function loadReplays() {
     elements.setupPanel.classList.add('hidden');
     elements.gameArea.classList.add('hidden');
-    if (elements.replayPanel) {
-        elements.replayPanel.classList.remove('hidden');
-    }
+    if (elements.replayPanel) elements.replayPanel.classList.remove('hidden');
+    if (elements.sandboxPanel) elements.sandboxPanel.classList.add('hidden');
 
     try {
         const response = await fetch('/api/replays?limit=50');

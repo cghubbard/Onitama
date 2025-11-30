@@ -25,13 +25,13 @@ class TestLinearModel:
     def test_create_model_with_weights(self):
         model = LinearModel(name="test", weights=DEFAULT_WEIGHTS.copy())
         assert model.name == "test"
-        assert len(model.weights) == 11
+        assert len(model.weights) == 14
 
     def test_get_weight_vector_order(self):
         """Weight vector should match FEATURE_NAMES order."""
         model = LinearModel(name="test", weights=DEFAULT_WEIGHTS.copy())
         vec = model.get_weight_vector()
-        assert len(vec) == 11
+        assert len(vec) == 14
         assert vec[0] == DEFAULT_WEIGHTS[FEATURE_NAMES[0]]
 
     def test_to_dict_roundtrip(self):
@@ -56,7 +56,7 @@ class TestLinearModel:
         model = create_baseline_model()
         assert model.name == "baseline_v1"
         assert model.elo == 1000
-        assert len(model.get_weight_vector()) == 11
+        assert len(model.get_weight_vector()) == 14
 
 
 class TestModelStore:
