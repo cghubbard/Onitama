@@ -407,10 +407,348 @@ class TestDataLoader:
         for example in dataset.examples:
             # Features should be numpy array
             assert isinstance(example.features, np.ndarray)
-            # Should have 14 features
-            assert len(example.features) == 14
+            # Should have 16 features
+            assert len(example.features) == 16
             # Should be numeric
             assert example.features.dtype in [np.float32, np.float64]
+
+    def test_filter_contains_matching(self, temp_storage):
+        """Test that 'baseline' matches 'linear:baseline_v1' with contains mode."""
+        # Create games with full agent names
+        traj1 = self.create_test_trajectory("game1", BLUE, blue_agent="linear:baseline_v1", red_agent="heuristic")
+        traj2 = self.create_test_trajectory("game2", RED, blue_agent="heuristic", red_agent="linear:baseline_v1")
+        traj3 = self.create_test_trajectory("game3", BLUE, blue_agent="random", red_agent="random")
+
+        temp_storage.save_trajectory(traj1)
+        temp_storage.save_trajectory(traj2)
+        temp_storage.save_trajectory(traj3)
+
+        # Filter by "baseline" with contains mode (default)
+        dataset = load_training_data(
+            temp_storage,
+            blue_agent="baseline",
+            red_agent=None,
+            agent_match_mode="contains"
+        )
+
+        # Should match game1 (blue has "baseline" in name)
+        assert len(dataset.game_ids) == 1
+        assert "game1" in dataset.game_ids
+
+    def test_filter_prefix_matching(self, temp_storage):
+        """Test that 'linear:' matches all linear agents with prefix mode."""
+        traj1 = self.create_test_trajectory("game1", BLUE, blue_agent="linear:baseline_v1", red_agent="heuristic")
+        traj2 = self.create_test_trajectory("game2", RED, blue_agent="linear:model_v2", red_agent="heuristic")
+        traj3 = self.create_test_trajectory("game3", BLUE, blue_agent="heuristic", red_agent="random")
+
+        temp_storage.save_trajectory(traj1)
+        temp_storage.save_trajectory(traj2)
+        temp_storage.save_trajectory(traj3)
+
+        # Filter by "linear" with prefix mode
+        dataset = load_training_data(
+            temp_storage,
+            blue_agent="linear",
+            red_agent=None,
+            agent_match_mode="prefix"
+        )
+
+        # Should match game1 and game2
+        assert len(dataset.game_ids) == 2
+        assert set(dataset.game_ids) == {"game1", "game2"}
+
+    def test_filter_exact_matching(self, temp_storage):
+        """Test exact mode still works for backward compatibility."""
+        traj1 = self.create_test_trajectory("game1", BLUE, blue_agent="linear:baseline_v1", red_agent="heuristic")
+        traj2 = self.create_test_trajectory("game2", RED, blue_agent="heuristic", red_agent="heuristic")
+
+        temp_storage.save_trajectory(traj1)
+        temp_storage.save_trajectory(traj2)
+
+        # Filter with exact match
+        dataset = load_training_data(
+            temp_storage,
+            blue_agent="heuristic",
+            red_agent="heuristic",
+            agent_match_mode="exact"
+        )
+
+        # Should only match game2 (exact match)
+        assert len(dataset.game_ids) == 1
+        assert "game2" in dataset.game_ids
+
+    def test_filter_no_matches_raises_error(self, temp_storage):
+        """Test clear error when filters match nothing."""
+        traj = self.create_test_trajectory("game1", BLUE, blue_agent="heuristic", red_agent="random")
+        temp_storage.save_trajectory(traj)
+
+        # Try to filter for agent that doesn't exist
+        with pytest.raises(ValueError) as exc_info:
+            load_training_data(
+                temp_storage,
+                blue_agent="nonexistent_agent",
+                red_agent=None
+            )
+
+        # Error message should be informative
+        error_msg = str(exc_info.value)
+        assert "No games found" in error_msg
+        assert "nonexistent_agent" in error_msg
+        assert "Available matchups" in error_msg
+
+    def test_load_with_terminal_states(self, temp_storage):
+        """Test loading games that include terminal states."""
+        # Create trajectory with terminal state
+        trajectory = GameTrajectory(
+            game_id="terminal_game",
+            timestamp="2025-01-01T00:00:00Z",
+            config=GameConfig(
+                cards_used=["Tiger", "Dragon", "Frog", "Rabbit", "Crab"],
+                blue_agent="test",
+                red_agent="test"
+            )
+        )
+
+        # Add regular transitions
+        for move in range(3):
+            snapshot = StateSnapshot(
+                board={
+                    "2,0": [BLUE, MASTER],
+                    "2,4": [RED, MASTER],
+                },
+                current_player=BLUE if move % 2 == 0 else RED,
+                blue_cards=["Tiger", "Dragon"],
+                red_cards=["Frog", "Rabbit"],
+                neutral_card="Crab",
+                move_number=move,
+                outcome=ONGOING
+            )
+            transition = Transition(
+                move_number=move,
+                state=snapshot,
+                legal_moves=[],
+                action={"from": [2, 0], "to": [2, 1], "card": "Tiger"}
+            )
+            trajectory.add_transition(transition)
+
+        # Add terminal state (no action)
+        terminal_snapshot = StateSnapshot(
+            board={"2,4": [BLUE, MASTER]},  # Blue master reached shrine
+            current_player=BLUE,
+            blue_cards=["Tiger", "Dragon"],
+            red_cards=["Frog", "Rabbit"],
+            neutral_card="Crab",
+            move_number=3,
+            outcome=1  # BLUE_WINS
+        )
+        terminal_transition = Transition(
+            move_number=3,
+            state=terminal_snapshot,
+            legal_moves=[],
+            action=None  # Terminal state
+        )
+        trajectory.add_transition(terminal_transition)
+
+        trajectory.set_outcome(BLUE, "shrine_reached")
+        temp_storage.save_trajectory(trajectory)
+
+        # Load data
+        dataset = load_training_data(temp_storage)
+
+        # Should have 5 examples (3 regular + 2 terminal from dual perspective)
+        assert len(dataset.examples) == 5
+
+        # Terminal state should have 2 examples (one per player)
+        terminal_examples = [ex for ex in dataset.examples if ex.move_number == 3]
+        assert len(terminal_examples) == 2
+
+    def test_terminal_state_feature_values(self, temp_storage):
+        """Verify terminal features have correct values (master_alive, opp_captured)."""
+        # Create game where blue wins by capturing red master
+        trajectory = GameTrajectory(
+            game_id="capture_game",
+            timestamp="2025-01-01T00:00:00Z",
+            config=GameConfig(
+                cards_used=["Tiger", "Dragon", "Frog", "Rabbit", "Crab"],
+                blue_agent="test",
+                red_agent="test"
+            )
+        )
+
+        # Add a couple regular moves
+        for move in range(2):
+            snapshot = StateSnapshot(
+                board={
+                    "2,0": [BLUE, MASTER],
+                    "2,4": [RED, MASTER],
+                },
+                current_player=BLUE if move % 2 == 0 else RED,
+                blue_cards=["Tiger", "Dragon"],
+                red_cards=["Frog", "Rabbit"],
+                neutral_card="Crab",
+                move_number=move,
+                outcome=ONGOING
+            )
+            transition = Transition(
+                move_number=move,
+                state=snapshot,
+                legal_moves=[],
+                action={"from": [2, 0], "to": [2, 1], "card": "Tiger"}
+            )
+            trajectory.add_transition(transition)
+
+        # Add terminal state: Blue wins, red master captured
+        terminal_snapshot = StateSnapshot(
+            board={"2,4": [BLUE, MASTER]},  # Only blue master remains
+            current_player=BLUE,
+            blue_cards=["Tiger", "Dragon"],
+            red_cards=["Frog", "Rabbit"],
+            neutral_card="Crab",
+            move_number=2,
+            outcome=1  # BLUE_WINS
+        )
+        terminal_transition = Transition(
+            move_number=2,
+            state=terminal_snapshot,
+            legal_moves=[],
+            action=None
+        )
+        trajectory.add_transition(terminal_transition)
+
+        trajectory.set_outcome(BLUE, "master_captured")
+        temp_storage.save_trajectory(trajectory)
+
+        # Load data
+        dataset = load_training_data(temp_storage)
+
+        # Should have 4 examples total: 2 regular moves + 2 terminal (one per player)
+        assert len(dataset.examples) == 4
+
+        # Get the terminal examples (last two)
+        terminal_examples = [ex for ex in dataset.examples if ex.move_number == 2]
+        assert len(terminal_examples) == 2  # One per player
+
+        # One should be winner (BLUE), one should be loser (RED)
+        winner_ex = [ex for ex in terminal_examples if ex.label == 1][0]
+        loser_ex = [ex for ex in terminal_examples if ex.label == 0][0]
+
+        # Winner (BLUE) should have my_master_alive=1, opp_master_captured=1
+        assert winner_ex.features[1] == 1  # my_master_alive
+        assert winner_ex.features[2] == 1  # opp_master_captured
+
+        # Loser (RED) should have my_master_alive=0, opp_master_captured=0
+        assert loser_ex.features[1] == 0  # my_master_alive (red master is dead)
+        assert loser_ex.features[2] == 0  # opp_master_captured (from red's view, blue master not captured)
+
+    def test_terminal_state_dual_perspective(self, temp_storage):
+        """Verify terminal states create examples from BOTH players' perspectives."""
+        # Create simple terminal trajectory
+        trajectory = GameTrajectory(
+            game_id="dual_test",
+            timestamp="2025-01-01T00:00:00Z",
+            config=GameConfig(
+                cards_used=["Tiger", "Dragon", "Frog", "Rabbit", "Crab"],
+                blue_agent="test",
+                red_agent="test"
+            )
+        )
+
+        # Add one regular move
+        snapshot = StateSnapshot(
+            board={"2,0": [BLUE, MASTER], "2,4": [RED, MASTER]},
+            current_player=BLUE,
+            blue_cards=["Tiger", "Dragon"],
+            red_cards=["Frog", "Rabbit"],
+            neutral_card="Crab",
+            move_number=0,
+            outcome=ONGOING
+        )
+        trajectory.add_transition(Transition(
+            move_number=0,
+            state=snapshot,
+            legal_moves=[],
+            action={"from": [2, 0], "to": [2, 1], "card": "Tiger"}
+        ))
+
+        # Add terminal state
+        terminal_snapshot = StateSnapshot(
+            board={"2,4": [BLUE, MASTER]},
+            current_player=BLUE,
+            blue_cards=["Tiger", "Dragon"],
+            red_cards=["Frog", "Rabbit"],
+            neutral_card="Crab",
+            move_number=1,
+            outcome=BLUE_WINS
+        )
+        trajectory.add_transition(Transition(
+            move_number=1,
+            state=terminal_snapshot,
+            legal_moves=[],
+            action=None
+        ))
+
+        trajectory.set_outcome(BLUE, "master_captured")
+        temp_storage.save_trajectory(trajectory)
+
+        # Load data
+        dataset = load_training_data(temp_storage)
+
+        # Should have 3 examples: 1 regular + 2 terminal (dual perspective)
+        assert len(dataset.examples) == 3
+
+        # Get terminal examples
+        terminal_examples = [ex for ex in dataset.examples if ex.move_number == 1]
+        assert len(terminal_examples) == 2
+
+        # One should be winner (label=1), one loser (label=0)
+        labels = [ex.label for ex in terminal_examples]
+        assert 1 in labels
+        assert 0 in labels
+        assert sum(labels) == 1  # Exactly one winner and one loser
+
+    def test_non_terminal_states_single_perspective(self, temp_storage):
+        """Verify non-terminal states still create only one example per transition."""
+        # Create trajectory with only non-terminal states
+        trajectory = GameTrajectory(
+            game_id="non_terminal",
+            timestamp="2025-01-01T00:00:00Z",
+            config=GameConfig(
+                cards_used=["Tiger", "Dragon", "Frog", "Rabbit", "Crab"],
+                blue_agent="test",
+                red_agent="test"
+            )
+        )
+
+        # Add 3 non-terminal moves
+        for move in range(3):
+            snapshot = StateSnapshot(
+                board={"2,0": [BLUE, MASTER], "2,4": [RED, MASTER]},
+                current_player=BLUE if move % 2 == 0 else RED,
+                blue_cards=["Tiger", "Dragon"],
+                red_cards=["Frog", "Rabbit"],
+                neutral_card="Crab",
+                move_number=move,
+                outcome=ONGOING
+            )
+            trajectory.add_transition(Transition(
+                move_number=move,
+                state=snapshot,
+                legal_moves=[],
+                action={"from": [2, 0], "to": [2, 1], "card": "Tiger"}
+            ))
+
+        trajectory.set_outcome(BLUE, "master_captured")
+        temp_storage.save_trajectory(trajectory)
+
+        # Load data
+        dataset = load_training_data(temp_storage)
+
+        # Should have exactly 3 examples (one per transition, no dual perspective)
+        assert len(dataset.examples) == 3
+
+        # Each move number should appear exactly once
+        move_numbers = [ex.move_number for ex in dataset.examples]
+        assert move_numbers == [0, 1, 2]
 
 
 class TestSplitByGames:

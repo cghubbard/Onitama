@@ -257,6 +257,34 @@ class GameLogSession:
 
         self.trajectory.add_transition(transition)
 
+    def log_terminal_state(self, game: 'Game'):
+        """
+        Log the final terminal state after a winning move.
+
+        Captures the state where outcome != ONGOING, allowing models
+        to learn what winning/losing positions look like.
+
+        Args:
+            game: Game after the winning move (outcome is set)
+        """
+        if not self.active:
+            return
+
+        # Capture terminal state
+        state = self.capture_state(game)
+
+        # Terminal states have no legal moves (game over)
+        # and no action (absorbing state)
+        transition = Transition(
+            move_number=len(self.trajectory.transitions),
+            state=state,
+            legal_moves=[],
+            action=None,  # Terminal state - no action possible
+            capture=None
+        )
+
+        self.trajectory.add_transition(transition)
+
     def end_game(self, winner: Optional[int], reason: str) -> Optional[str]:
         """
         End the game and save trajectory.

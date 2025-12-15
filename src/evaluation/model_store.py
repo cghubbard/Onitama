@@ -36,8 +36,8 @@ class TrainingInfo:
 @dataclass
 class NormalizationStats:
     """Feature normalization statistics."""
-    means: List[float] = field(default_factory=lambda: [0.0] * 14)
-    stds: List[float] = field(default_factory=lambda: [1.0] * 14)
+    means: List[float] = field(default_factory=lambda: [0.0] * 16)
+    stds: List[float] = field(default_factory=lambda: [1.0] * 16)
     epsilon: float = 1e-8
 
 
@@ -313,7 +313,7 @@ def create_baseline_model() -> LinearModel:
         weights=DEFAULT_WEIGHTS.copy(),
         bias=0.0,
         training=TrainingInfo(
-            notes="Hand-tuned baseline weights"
+            notes="Hand-tuned baseline weights (16-feature version)"
         ),
         elo=1000,  # Starting Elo
     )

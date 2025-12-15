@@ -9,7 +9,8 @@
       "Bash(python3:*)",
       "Bash(sqlite3:*)",
       "Bash(pytest tests/ -v:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []

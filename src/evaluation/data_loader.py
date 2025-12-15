@@ -96,7 +96,10 @@ def load_training_data(
     limit: Optional[int] = None,
     gamma: float = 0.97,
     exclude_draws: bool = True,
-    verbose: bool = False
+    verbose: bool = False,
+    agent_match_mode: str = "contains",
+    terminal_weight_multiplier: float = 1.0,
+    terminal_only: bool = False
 ) -> TrainingDataset:
     """
     Load training data from game storage.
@@ -112,6 +115,9 @@ def load_training_data(
         gamma: Discount factor for time-based weighting (default: 0.97)
         exclude_draws: Whether to exclude drawn games (default: True)
         verbose: Print progress information (default: False)
+        agent_match_mode: How to match agent names - "exact", "contains", or "prefix" (default: "contains")
+        terminal_weight_multiplier: Multiply terminal state weights by this factor (default: 1.0)
+        terminal_only: Only include terminal states in training data (default: False)
 
     Returns:
         TrainingDataset ready for training
@@ -119,7 +125,7 @@ def load_training_data(
     Process:
         1. Query games from storage (filtering by agents if specified)
         2. Load each GameTrajectory
-        3. For each non-terminal transition:
+        3. For each transition (including terminal states):
            - Reconstruct Game from StateSnapshot
            - Extract features φ(s) from current player's perspective
            - Determine label: 1 if current player wins, 0 if loses
@@ -144,13 +150,40 @@ def load_training_data(
     if verbose:
         print(f"Querying games...")
         print(f"  Filters: blue_agent={blue_agent}, red_agent={red_agent}")
+        print(f"  Match mode: {agent_match_mode}")
         print(f"  Limit: {limit if limit else 'all'}")
+
+        # Show available matchups if filtering
+        if blue_agent or red_agent:
+            combos = storage.get_unique_agent_combinations()
+            print(f"\n  Available agent matchups (top 10):")
+            for blue, red, count in combos[:10]:
+                print(f"    {blue} vs {red}: {count} games")
 
     games_metadata = storage.query_games(
         blue_agent=blue_agent,
         red_agent=red_agent,
-        limit=limit or 10000  # Large default if no limit specified
+        limit=limit or 10000,  # Large default if no limit specified
+        agent_match_mode=agent_match_mode
     )
+
+    # Validate filters matched games
+    if (blue_agent or red_agent) and len(games_metadata) == 0:
+        total_games = storage.count_games()
+        combos = storage.get_unique_agent_combinations()
+
+        error_msg = (
+            f"\nNo games found matching filters:\n"
+            f"  blue_agent={blue_agent}\n"
+            f"  red_agent={red_agent}\n"
+            f"  match_mode={agent_match_mode}\n"
+            f"\nDatabase contains {total_games} total games.\n"
+            f"\nAvailable matchups:\n"
+        )
+        for blue, red, count in combos[:15]:
+            error_msg += f"  {blue} vs {red}: {count} games\n"
+
+        raise ValueError(error_msg)
 
     if verbose:
         print(f"Found {len(games_metadata)} games matching criteria")
@@ -177,35 +210,48 @@ def load_training_data(
         game_ids_set.add(trajectory.game_id)
         n_games_processed += 1
 
-        # Process each non-terminal transition
+        # Process each transition (including terminal states)
         for t, transition in enumerate(trajectory.transitions):
             snapshot = transition.state
 
-            # Skip if already terminal (shouldn't happen in well-formed data)
-            if snapshot.outcome != 0:  # 0=ONGOING
-                continue
-
             # Reconstruct game from snapshot
             game = reconstruct_game_from_snapshot(snapshot)
-
-            # Extract features from current player's perspective
-            current_player = snapshot.current_player
-            features = extractor.extract_as_array(game, current_player)
-
-            # Determine label: did current player win?
-            label = 1 if winner == current_player else 0
 
             # Compute time-based weight: γ^(H-1-t)
             # Later states (higher t) get higher weights (closer to outcome)
             weight = gamma ** (H - 1 - t)
 
-            examples.append(TrainingExample(
-                features=np.array(features, dtype=np.float64),
-                label=label,
-                weight=weight,
-                game_id=trajectory.game_id,
-                move_number=t
-            ))
+            # For terminal states, create examples from BOTH players' perspectives
+            # This ensures we learn what winning AND losing positions look like
+            from src.utils.constants import ONGOING
+            if snapshot.outcome != ONGOING:
+                # Terminal state - create two examples with boosted weight
+                terminal_weight = weight * terminal_weight_multiplier
+                for player_id in [0, 1]:  # BLUE=0, RED=1
+                    features = extractor.extract_as_array(game, player_id)
+                    label = 1 if winner == player_id else 0
+
+                    examples.append(TrainingExample(
+                        features=np.array(features, dtype=np.float64),
+                        label=label,
+                        weight=terminal_weight,
+                        game_id=trajectory.game_id,
+                        move_number=t
+                    ))
+            elif not terminal_only:
+                # Non-terminal state - create one example from current player's perspective
+                # Skip if terminal_only=True
+                current_player = snapshot.current_player
+                features = extractor.extract_as_array(game, current_player)
+                label = 1 if winner == current_player else 0
+
+                examples.append(TrainingExample(
+                    features=np.array(features, dtype=np.float64),
+                    label=label,
+                    weight=weight,
+                    game_id=trajectory.game_id,
+                    move_number=t
+                ))
 
         # Progress update
         if verbose and n_games_processed % 100 == 0:

@@ -206,7 +206,8 @@ def train_linear_value_function(
     cv_folds: int = 5,
     epsilon: float = 1e-8,
     random_state: int = 42,
-    verbose: bool = False
+    verbose: bool = False,
+    normalize: bool = True
 ) -> GridSearchResults:
     """
     Train linear value function with grid search over regularization.
@@ -222,6 +223,7 @@ def train_linear_value_function(
         epsilon: Epsilon for feature standardization
         random_state: Random seed for reproducibility
         verbose: Print progress information
+        normalize: Whether to standardize features (default: True)
 
     Returns:
         GridSearchResults with all models and best model selected
@@ -264,13 +266,22 @@ def train_linear_value_function(
         print(f"Cross-validation: {cv_folds} folds (game-level)\n")
 
     # Compute standardization stats on full data
-    means, stds = compute_standardization_stats(X, epsilon)
-    X_std = standardize_features(X, means, stds, epsilon)
+    if normalize:
+        means, stds = compute_standardization_stats(X, epsilon)
+        X_std = standardize_features(X, means, stds, epsilon)
 
-    if verbose:
-        print(f"Feature standardization:")
-        print(f"  Means: min={means.min():.3f}, max={means.max():.3f}")
-        print(f"  Stds:  min={stds.min():.3f}, max={stds.max():.3f}\n")
+        if verbose:
+            print(f"Feature standardization:")
+            print(f"  Means: min={means.min():.3f}, max={means.max():.3f}")
+            print(f"  Stds:  min={stds.min():.3f}, max={stds.max():.3f}\n")
+    else:
+        # No normalization - use raw features
+        X_std = X
+        means = np.zeros(X.shape[1])
+        stds = np.ones(X.shape[1])
+
+        if verbose:
+            print(f"Feature normalization: DISABLED (using raw features)\n")
 
     # Grid search
     results = []

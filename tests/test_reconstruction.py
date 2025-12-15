@@ -109,11 +109,13 @@ class TestGameReconstruction:
         original_features = extractor.extract(initial_game, BLUE)
         reconstructed_features = extractor.extract(reconstructed, BLUE)
 
-        # Compare all features
+        # Compare all 16 features
         assert original_features.material_diff_students == reconstructed_features.material_diff_students
         assert original_features.my_master_alive == reconstructed_features.my_master_alive
         assert original_features.opp_master_captured == reconstructed_features.opp_master_captured
-        assert original_features.master_safety_balance == reconstructed_features.master_safety_balance
+        assert original_features.my_master_threats == reconstructed_features.my_master_threats
+        assert original_features.opp_master_threats == reconstructed_features.opp_master_threats
+        assert original_features.opp_shrine_threat == reconstructed_features.opp_shrine_threat
         assert original_features.my_legal_moves == reconstructed_features.my_legal_moves
         assert original_features.opp_legal_moves == reconstructed_features.opp_legal_moves
         assert original_features.my_capture_moves == reconstructed_features.my_capture_moves

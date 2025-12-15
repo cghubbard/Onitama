@@ -7,7 +7,7 @@ import json
 import sqlite3
 import os
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
 from src.logging.trajectory import GameTrajectory
 
@@ -161,7 +161,8 @@ class GameStorage:
         since: Optional[str] = None,
         until: Optional[str] = None,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        agent_match_mode: str = "contains"
     ) -> List[Dict[str, Any]]:
         """
         Query games by various criteria.
@@ -176,6 +177,10 @@ class GameStorage:
             until: ISO timestamp - games before this time
             limit: Maximum results to return
             offset: Number of results to skip
+            agent_match_mode: How to match agent names:
+                - "exact": Exact string match
+                - "contains": Substring match (default)
+                - "prefix": Match agent type prefix (e.g., "linear:" matches "linear:model_name")
 
         Returns:
             List of game summary dictionaries
@@ -184,11 +189,25 @@ class GameStorage:
         params = []
 
         if blue_agent:
-            conditions.append("blue_agent = ?")
-            params.append(blue_agent)
+            if agent_match_mode == "exact":
+                conditions.append("blue_agent = ?")
+                params.append(blue_agent)
+            elif agent_match_mode == "contains":
+                conditions.append("blue_agent LIKE ?")
+                params.append(f"%{blue_agent}%")
+            elif agent_match_mode == "prefix":
+                conditions.append("blue_agent LIKE ?")
+                params.append(f"{blue_agent}:%")
         if red_agent:
-            conditions.append("red_agent = ?")
-            params.append(red_agent)
+            if agent_match_mode == "exact":
+                conditions.append("red_agent = ?")
+                params.append(red_agent)
+            elif agent_match_mode == "contains":
+                conditions.append("red_agent LIKE ?")
+                params.append(f"%{red_agent}%")
+            elif agent_match_mode == "prefix":
+                conditions.append("red_agent LIKE ?")
+                params.append(f"{red_agent}:%")
         if winner is not None:
             conditions.append("winner = ?")
             params.append(winner)
@@ -263,6 +282,23 @@ class GameStorage:
                 params
             )
             return cursor.fetchone()[0]
+
+    def get_unique_agent_combinations(self) -> List[Tuple[str, str, int]]:
+        """
+        Get all unique agent matchups with counts.
+
+        Returns:
+            List of tuples: (blue_agent, red_agent, count)
+            Sorted by count descending
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT blue_agent, red_agent, COUNT(*) as count
+                FROM games
+                GROUP BY blue_agent, red_agent
+                ORDER BY count DESC
+            """)
+            return cursor.fetchall()
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get aggregate statistics about stored games."""

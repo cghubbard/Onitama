@@ -112,35 +112,43 @@ class TestFeatureExtractor:
         assert features.my_capture_moves == 0
         assert features.opp_capture_moves == 0
 
-    def test_master_safety_at_start(self, extractor, starting_game):
+    def test_master_threats_at_start(self, extractor, starting_game):
         """At start, no master threats should exist."""
         features = extractor.extract(starting_game, BLUE)
 
         # Masters are far apart, no threats
-        assert features.master_safety_balance == 0
+        assert features.my_master_threats == 0
+        assert features.opp_master_threats == 0
+
+    def test_shrine_threat_at_start(self, extractor, starting_game):
+        """At start, opponent should not be able to reach our shrine."""
+        features = extractor.extract(starting_game, BLUE)
+
+        # Opponent master is at (2, 4), BLUE shrine is at (2, 0) - too far
+        assert features.opp_shrine_threat == 0
 
     # =========================================================================
     # Test 6: Feature vector structure
     # =========================================================================
-    def test_feature_vector_has_14_elements(self, extractor, starting_game):
-        """Feature vector should have exactly 14 elements."""
+    def test_feature_vector_has_16_elements(self, extractor, starting_game):
+        """Feature vector should have exactly 16 elements."""
         features = extractor.extract(starting_game, BLUE)
-        assert len(features) == 14
+        assert len(features) == 16
 
     def test_extract_as_array(self, extractor, starting_game):
         """extract_as_array should return a list of floats."""
         array = extractor.extract_as_array(starting_game, BLUE)
         assert isinstance(array, list)
-        assert len(array) == 14
+        assert len(array) == 16
         assert all(isinstance(x, (int, float)) for x in array)
 
     def test_feature_names_count(self):
-        """Should have 14 feature names."""
-        assert len(FEATURE_NAMES) == 14
+        """Should have 16 feature names."""
+        assert len(FEATURE_NAMES) == 16
 
     def test_default_weights_count(self):
-        """Should have 14 default weights."""
-        assert len(DEFAULT_WEIGHT_VECTOR) == 14
+        """Should have 16 default weights."""
+        assert len(DEFAULT_WEIGHT_VECTOR) == 16
 
     # =========================================================================
     # Test 7: Evaluation function
@@ -310,7 +318,7 @@ class TestLinearHeuristicAgent:
         from src.agents.linear_heuristic_agent import LinearHeuristicAgent
 
         game = Game(cards=['Tiger', 'Dragon', 'Frog', 'Rabbit', 'Crab'])
-        custom_weights = [1.0] * 14
+        custom_weights = [1.0] * 16
         agent = LinearHeuristicAgent(BLUE, weights=custom_weights)
 
         move = agent.select_move(game)

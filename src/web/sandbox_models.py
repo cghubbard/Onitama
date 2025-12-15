@@ -28,9 +28,13 @@ class PositionEvaluationRequest(BaseModel):
     """Request to evaluate a position."""
     game_id: str
     move_number: int
+    model_id: Optional[str] = Field(
+        default="baseline_v1",
+        description="Model to use for evaluation. Defaults to baseline_v1."
+    )
     weights: Optional[List[float]] = Field(
         default=None,
-        description="Custom weights for the 11 features. Uses defaults if not provided."
+        description="Custom weights override. If provided, ignores model_id and uses these weights."
     )
 
 

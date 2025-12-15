@@ -64,7 +64,8 @@ class Transition:
     legal_moves: List[Dict[str, Any]]
 
     # Action that was taken: {"from": [x,y], "to": [x,y], "card": "name"}
-    action: Dict[str, Any]
+    # None for terminal states (no action possible from absorbing state)
+    action: Optional[Dict[str, Any]] = None
 
     # Capture info (None if no capture, or [player, piece_type] of captured piece)
     capture: Optional[List[int]] = None

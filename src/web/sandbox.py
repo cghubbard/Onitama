@@ -16,7 +16,8 @@ from src.logging.storage import GameStorage
 from src.logging.reconstruction import reconstruct_game_from_snapshot
 from src.logging.trajectory import GameTrajectory
 from src.evaluation.features import FeatureExtractor
-from src.evaluation.weights import FEATURE_NAMES, DEFAULT_WEIGHT_VECTOR
+from src.evaluation.weights import FEATURE_NAMES
+from src.evaluation.model_store import ModelStore
 from src.utils.constants import BLUE_WINS, RED_WINS, BLUE, RED, ONGOING
 
 router = APIRouter(prefix="/api/sandbox", tags=["sandbox"])
@@ -33,18 +34,27 @@ def set_storage(storage: GameStorage):
 
 @router.get("/models", response_model=ModelsResponse)
 async def list_models():
-    """List available evaluation models."""
-    return ModelsResponse(
-        models=[
-            EvaluationModel(
-                id="linear_heuristic",
-                name="Linear Heuristic",
-                description="Linear evaluation V(s) = w^T * phi(s) with 14 features",
+    """List available evaluation models from the model registry."""
+    store = ModelStore()
+    registry_entries = store.list_models()
+
+    models = []
+    for entry in registry_entries:
+        try:
+            model = store.load(entry.name)
+            models.append(EvaluationModel(
+                id=model.name,
+                name=model.name,
+                description=entry.notes or f"Model trained on {model.training.num_games if model.training else 0} games",
                 feature_names=FEATURE_NAMES,
-                default_weights=DEFAULT_WEIGHT_VECTOR
-            )
-        ]
-    )
+                default_weights=model.get_weight_vector()
+            ))
+        except Exception as e:
+            # Skip models that fail to load
+            print(f"Warning: Could not load model {entry.name}: {e}")
+            continue
+
+    return ModelsResponse(models=models)
 
 
 @router.post("/evaluate", response_model=PositionEvaluationResponse)
@@ -76,10 +86,22 @@ async def evaluate_position(request: PositionEvaluationRequest):
     # Reconstruct game state
     game = reconstruct_game_from_snapshot(transition.state)
 
-    # Use provided weights or defaults
-    weights = request.weights if request.weights else DEFAULT_WEIGHT_VECTOR
-    if len(weights) != 14:
-        raise HTTPException(status_code=400, detail="Weights must have exactly 14 values")
+    # Determine weights to use: custom weights > model weights > defaults
+    if request.weights:
+        weights = request.weights
+        if len(weights) != 16:
+            raise HTTPException(status_code=400, detail="Weights must have exactly 16 values")
+    else:
+        # Load model weights
+        store = ModelStore()
+        model_id = request.model_id or "baseline_v1"
+        try:
+            model = store.load(model_id)
+            weights = model.get_weight_vector()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error loading model: {str(e)}")
 
     extractor = FeatureExtractor()
     current_player = transition.state.current_player
@@ -123,8 +145,8 @@ async def evaluate_position(request: PositionEvaluationRequest):
 
         # Extract features after move
         if is_winning:
-            total_score = float('inf')
-            features_after = [0.0] * 14
+            total_score = 999999.0  # Large sentinel value for winning moves (JSON-compliant)
+            features_after = [0.0] * 16
         else:
             features_after = extractor.extract_as_array(simulated, current_player)
             total_score = sum(w * f for w, f in zip(weights, features_after))

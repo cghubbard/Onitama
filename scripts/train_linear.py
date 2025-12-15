@@ -169,6 +169,15 @@ Examples:
                         help='Epsilon for feature standardization (default: 1e-8)')
     parser.add_argument('--exclude-draws', action='store_true',
                         help='Exclude drawn games from training')
+    parser.add_argument('--agent-match-mode', type=str, default='contains',
+                        choices=['exact', 'contains', 'prefix'],
+                        help='How to match agent names: exact, contains (default), or prefix')
+    parser.add_argument('--terminal-weight-multiplier', type=float, default=1.0,
+                        help='Multiply terminal state weights by this factor (default: 1.0)')
+    parser.add_argument('--terminal-only', action='store_true',
+                        help='Only train on terminal states (default: False)')
+    parser.add_argument('--no-normalize', action='store_true',
+                        help='Disable feature normalization (use raw features)')
     parser.add_argument('--random-state', type=int, default=42,
                         help='Random seed for reproducibility (default: 42)')
 
@@ -212,7 +221,10 @@ Examples:
             limit=args.limit,
             gamma=args.gamma,
             exclude_draws=args.exclude_draws,
-            verbose=verbose
+            verbose=verbose,
+            agent_match_mode=args.agent_match_mode,
+            terminal_weight_multiplier=args.terminal_weight_multiplier,
+            terminal_only=args.terminal_only
         )
     except Exception as e:
         print(f"\nError loading data: {e}", file=sys.stderr)
@@ -248,7 +260,8 @@ Examples:
             cv_folds=args.cv_folds,
             epsilon=args.epsilon,
             random_state=args.random_state,
-            verbose=verbose
+            verbose=verbose,
+            normalize=not args.no_normalize
         )
     except Exception as e:
         print(f"\nError during training: {e}", file=sys.stderr)

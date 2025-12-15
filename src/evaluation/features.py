@@ -19,11 +19,13 @@ from src.utils.constants import BLUE, RED, PAWN, MASTER, BLUE_SHRINE, RED_SHRINE
 
 
 class FeatureVector(NamedTuple):
-    """Named tuple holding all 14 features."""
+    """Named tuple holding all 16 features."""
     material_diff_students: int
     my_master_alive: int
     opp_master_captured: int
-    master_safety_balance: int
+    my_master_threats: int       # Count of opponent moves that can capture my master
+    opp_master_threats: int      # Count of my moves that can capture opponent master
+    opp_shrine_threat: int       # 1 if opponent master can reach my shrine next turn
     my_legal_moves: int
     opp_legal_moves: int
     my_capture_moves: int
@@ -60,7 +62,7 @@ class FeatureExtractor:
             perspective: Player perspective (BLUE=0 or RED=1)
 
         Returns:
-            FeatureVector with all 14 features
+            FeatureVector with all 16 features
         """
         me, opp = self._get_players(perspective)
         my_temple, enemy_temple = self._get_temples(perspective)
@@ -79,15 +81,17 @@ class FeatureExtractor:
             my_temple, enemy_temple)
 
         # Phase 3: Mobility features (computes legal moves for both players)
-        (my_legal, opp_legal, my_captures, opp_captures, safety_balance,
-         escape_options) = self._compute_mobility_features(
-            game, me, opp, board, my_master_pos, opp_master_pos)
+        (my_legal, opp_legal, my_captures, opp_captures, my_master_threats,
+         opp_master_threats, opp_shrine_threat, escape_options) = self._compute_mobility_features(
+            game, me, opp, board, my_master_pos, opp_master_pos, my_temple)
 
         return FeatureVector(
             material_diff_students=material_diff,
             my_master_alive=my_master_alive,
             opp_master_captured=opp_master_captured,
-            master_safety_balance=safety_balance,
+            my_master_threats=my_master_threats,
+            opp_master_threats=opp_master_threats,
+            opp_shrine_threat=opp_shrine_threat,
             my_legal_moves=my_legal,
             opp_legal_moves=opp_legal,
             my_capture_moves=my_captures,
@@ -109,7 +113,7 @@ class FeatureExtractor:
             perspective: Player perspective (BLUE=0 or RED=1)
 
         Returns:
-            List of 14 floats
+            List of 16 floats
         """
         fv = self.extract(game, perspective)
         return list(fv)
@@ -121,7 +125,7 @@ class FeatureExtractor:
         Args:
             game: The current game state
             perspective: Player perspective
-            weights: List of 14 weights
+            weights: List of 16 weights
 
         Returns:
             Scalar evaluation score
@@ -304,8 +308,9 @@ class FeatureExtractor:
         opp: int,
         board: Dict[Tuple[int, int], Tuple[int, int]],
         my_master_pos: Optional[Tuple[int, int]],
-        opp_master_pos: Optional[Tuple[int, int]]
-    ) -> Tuple[int, int, int, int, int, int]:
+        opp_master_pos: Optional[Tuple[int, int]],
+        my_temple: Tuple[int, int]
+    ) -> Tuple[int, int, int, int, int, int, int, int]:
         """
         Compute all mobility-related features.
 
@@ -315,30 +320,41 @@ class FeatureExtractor:
             - opp_legal_moves: count of opponent's legal moves
             - my_capture_moves: count of my capture opportunities
             - opp_capture_moves: count of opponent's capture threats on my pieces
-            - master_safety_balance: my threats on opp master - opp threats on my master
+            - my_master_threats: count of opponent moves that can capture my master
+            - opp_master_threats: count of my moves that can capture opponent master
+            - opp_shrine_threat: 1 if opponent master can reach my shrine next turn, else 0
             - master_escape_options: number of moves for my master
         """
         my_moves = self._compute_moves_for_player(game, me)
         opp_moves = self._compute_moves_for_player(game, opp)
 
-        # Legal move counts (split from legal_moves_diff)
+        # Legal move counts
         my_legal = len(my_moves)
         opp_legal = len(opp_moves)
 
-        # Capture move counts (split from capture_moves_diff)
+        # Capture move counts
         my_captures = sum(1 for m in my_moves if m[1] in board and board[m[1]][0] == opp)
         opp_captures = sum(1 for m in opp_moves if m[1] in board and board[m[1]][0] == me)
 
-        # master_safety_balance: my moves capturing opp master - opp moves capturing my master
+        # Master threats (split from master_safety_balance)
+        # my_master_threats: how many opponent moves can capture my master (DANGER)
+        # opp_master_threats: how many of my moves can capture opponent master (OPPORTUNITY)
         my_master_threats = 0
         opp_master_threats = 0
 
-        if opp_master_pos is not None:
-            my_master_threats = sum(1 for m in my_moves if m[1] == opp_master_pos)
         if my_master_pos is not None:
-            opp_master_threats = sum(1 for m in opp_moves if m[1] == my_master_pos)
+            my_master_threats = sum(1 for m in opp_moves if m[1] == my_master_pos)
+        if opp_master_pos is not None:
+            opp_master_threats = sum(1 for m in my_moves if m[1] == opp_master_pos)
 
-        master_safety_balance = my_master_threats - opp_master_threats
+        # Shrine threat: can opponent master reach my shrine next turn? (Way of Stream)
+        opp_shrine_threat = 0
+        if opp_master_pos is not None:
+            # Check if any opponent move takes their master to my temple
+            for from_pos, to_pos, _ in opp_moves:
+                if from_pos == opp_master_pos and to_pos == my_temple:
+                    opp_shrine_threat = 1
+                    break
 
         # master_escape_options: my moves that move the master
         if my_master_pos is not None:
@@ -347,4 +363,4 @@ class FeatureExtractor:
             master_escape_options = 0
 
         return (my_legal, opp_legal, my_captures, opp_captures,
-                master_safety_balance, master_escape_options)
+                my_master_threats, opp_master_threats, opp_shrine_threat, master_escape_options)

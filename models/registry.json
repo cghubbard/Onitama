@@ -27,8 +27,80 @@
     {
       "name": "baseline_v1",
       "path": "linear/baseline_v1.json",
-      "elo": 993,
-      "notes": "Hand-tuned baseline weights"
+      "elo": 1090,
+      "notes": "Hand-tuned baseline weights (16-feature version)"
+    },
+    {
+      "name": "baseline_v1_elastic_net",
+      "path": "linear/baseline_v1_elastic_net.json",
+      "elo": 1006,
+      "notes": "Elastic net trained on baseline_v1 vs heuristic (2000 games)"
+    },
+    {
+      "name": "baseline_v1_l1",
+      "path": "linear/baseline_v1_l1.json",
+      "elo": 1004,
+      "notes": "L1-only regularization on 4000 games (step 3 + step 5)"
+    },
+    {
+      "name": "baseline_v1_l2",
+      "path": "linear/baseline_v1_l2.json",
+      "elo": 900,
+      "notes": "L2-only regularization on 4000 games (step 1 + step 3)"
+    },
+    {
+      "name": "test_filter",
+      "path": "linear/test_filter.json",
+      "elo": null,
+      "notes": ""
+    },
+    {
+      "name": "baseline_v2_with_terminal",
+      "path": "linear/baseline_v2_with_terminal.json",
+      "elo": null,
+      "notes": "Trained with terminal states"
+    },
+    {
+      "name": "baseline_v2_dual_perspective.json",
+      "path": "linear/baseline_v2_dual_perspective.json.json",
+      "elo": null,
+      "notes": "Trained with dual-perspective terminal states"
+    },
+    {
+      "name": "baseline_v2_term_x10",
+      "path": "linear/baseline_v2_term_x10.json",
+      "elo": null,
+      "notes": "Terminal weight multiplier: 10x"
+    },
+    {
+      "name": "baseline_v2_term_x50",
+      "path": "linear/baseline_v2_term_x50.json",
+      "elo": null,
+      "notes": "Terminal weight multiplier: 50x"
+    },
+    {
+      "name": "baseline_v2_term_x100",
+      "path": "linear/baseline_v2_term_x100.json",
+      "elo": null,
+      "notes": "Terminal weight multiplier: 100x"
+    },
+    {
+      "name": "baseline_v2_term_x1000",
+      "path": "linear/baseline_v2_term_x1000.json",
+      "elo": null,
+      "notes": "Terminal weight multiplier: 1000x"
+    },
+    {
+      "name": "baseline_v2_term_x10_no_norm",
+      "path": "linear/baseline_v2_term_x10_no_norm.json",
+      "elo": null,
+      "notes": "Trained with 10x terminal weight, NO normalization"
+    },
+    {
+      "name": "baseline_v2_terminal_only_x10",
+      "path": "linear/baseline_v2_terminal_only_x10.json",
+      "elo": null,
+      "notes": "Trained ONLY on terminal states with 10x weight"
     }
   ]
 }

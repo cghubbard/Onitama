@@ -205,6 +205,10 @@ def run_game(blue_agent_type, red_agent_type, renderer_type='ascii', delay=0.5, 
         print(f"Game over after {move_count} moves.")
         print(f"Outcome: {OUTCOME_NAMES[outcome]}")
 
+    # Log terminal state for decisive games
+    if log_session and outcome in (1, 2):  # BLUE_WINS or RED_WINS
+        log_session.log_terminal_state(game)
+
     # Log game end
     if log_session:
         winner = None

@@ -13,6 +13,8 @@ class SandboxController {
         this.cardRenderer = null;
         this.featureNames = [];
         this.defaultWeights = [];
+        this.availableModels = [];
+        this.selectedModelId = 'baseline_v1';
     }
 
     async init() {
@@ -44,14 +46,45 @@ class SandboxController {
         try {
             const response = await fetch('/api/sandbox/models');
             const data = await response.json();
-            const linearModel = data.models.find(m => m.id === 'linear_heuristic');
-            if (linearModel) {
-                this.defaultWeights = linearModel.default_weights;
-                this.featureNames = linearModel.feature_names;
+
+            // Store all available models
+            this.availableModels = data.models;
+
+            // Get feature names from first model
+            if (data.models.length > 0) {
+                this.featureNames = data.models[0].feature_names;
+                this.defaultWeights = data.models[0].default_weights;
             }
+
+            // Populate model selector dropdown
+            this.populateModelSelector();
         } catch (e) {
             console.error('Failed to load model info:', e);
         }
+    }
+
+    populateModelSelector() {
+        const select = document.getElementById('sandbox-model-select');
+        if (!select) return;
+
+        select.innerHTML = '';
+
+        // Add all models to dropdown
+        this.availableModels.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = model.name;
+
+            // Add ELO or notes as tooltip
+            if (model.description) {
+                option.title = model.description;
+            }
+
+            select.appendChild(option);
+        });
+
+        // Set default selection
+        select.value = this.selectedModelId;
     }
 
     setupEventListeners() {
@@ -60,8 +93,23 @@ class SandboxController {
         document.getElementById('sandbox-prev')?.addEventListener('click', () => this.prevMove());
         document.getElementById('sandbox-next')?.addEventListener('click', () => this.nextMove());
 
+        // Model selection
+        document.getElementById('sandbox-model-select')?.addEventListener('change', (e) => {
+            this.selectedModelId = e.target.value;
+            this.onModelChanged();
+        });
+
         // Comparison
         document.getElementById('sandbox-clear-comparison')?.addEventListener('click', () => this.clearComparison());
+    }
+
+    onModelChanged() {
+        // Re-evaluate current position with new model
+        if (this.trajectory) {
+            this.selectedMoves = [];
+            document.getElementById('sandbox-comparison').classList.add('hidden');
+            this.evaluatePosition();
+        }
     }
 
     async loadGameList() {
@@ -154,7 +202,7 @@ class SandboxController {
                 body: JSON.stringify({
                     game_id: this.trajectory.game_id,
                     move_number: this.moveIndex,
-                    weights: null  // Use default weights
+                    model_id: this.selectedModelId  // Use selected model
                 })
             });
 
@@ -257,6 +305,15 @@ class SandboxController {
         if (!container || !this.evaluation) return;
 
         container.innerHTML = '';
+
+        // Check if game is over (no legal moves)
+        if (!this.evaluation.moves || this.evaluation.moves.length === 0) {
+            const message = document.createElement('div');
+            message.className = 'game-over-message';
+            message.innerHTML = '<p><strong>Game Over</strong> - No moves available</p>';
+            container.appendChild(message);
+            return;
+        }
 
         this.evaluation.moves.forEach((move, index) => {
             const item = document.createElement('div');
